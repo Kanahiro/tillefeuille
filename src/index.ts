@@ -1,6 +1,6 @@
 import { decompressIfGzip, gzip } from "./compression.js";
 import { mergeMvtTiles, renameMvtLayers } from "./mvt.js";
-import { PMTilesReader, type RangeFetcher } from "./pmtiles.js";
+import { EtagMismatch, PMTiles, ResolvedValueCache } from "pmtiles";
 
 export interface MergeVectorTilesOptions {
   z: number;
@@ -22,23 +22,27 @@ interface ResolveSourceOptions {
   signal?: AbortSignal;
 }
 
-const defaultPMTilesReaders = new Map<string, PMTilesReader>();
-const customPMTilesReaders = new WeakMap<typeof fetch, Map<string, PMTilesReader>>();
+const defaultPMTilesReaders = new Map<string, PMTiles>();
+const customPMTilesReaders = new WeakMap<typeof fetch, Map<string, PMTiles>>();
 
 export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promise<Uint8Array> {
   const skipMissing = options.skipMissing ?? true;
   const renamedTiles: Uint8Array[] = [];
+  const sourceTiles = await Promise.all(
+    Object.entries(options.sources).map(async ([id, url]) => ({
+      id,
+      tile: await fetchSourceTile({
+        z: options.z,
+        x: options.x,
+        y: options.y,
+        url,
+        fetch: options.fetch,
+        signal: options.signal
+      })
+    }))
+  );
 
-  for (const [id, sourceUrl] of Object.entries(options.sources)) {
-    const tile = await fetchSourceTile({
-      z: options.z,
-      x: options.x,
-      y: options.y,
-      url: sourceUrl,
-      fetch: options.fetch,
-      signal: options.signal
-    });
-
+  for (const { id, tile } of sourceTiles) {
     if (!tile) {
       if (skipMissing) {
         continue;
@@ -57,7 +61,8 @@ async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Arra
   if (options.url.startsWith("pmtiles://")) {
     const archiveUrl = options.url.slice("pmtiles://".length);
     const reader = getPMTilesReader(archiveUrl, options.fetch);
-    return reader.getZxy(options.z, options.x, options.y, options.signal);
+    const tile = await reader.getZxy(options.z, options.x, options.y, options.signal);
+    return tile ? new Uint8Array(tile.data) : undefined;
   }
 
   const url = expandTileUrlTemplate(options.url, options.z, options.x, options.y);
@@ -90,11 +95,11 @@ function expandTileUrlTemplate(template: string, z: number, x: number, y: number
     .replaceAll("{y}", String(y));
 }
 
-function getPMTilesReader(url: string, fetchImpl: typeof fetch | undefined): PMTilesReader {
+function getPMTilesReader(url: string, fetchImpl: typeof fetch | undefined): PMTiles {
   if (!fetchImpl) {
     let reader = defaultPMTilesReaders.get(url);
     if (!reader) {
-      reader = new PMTilesReader(url);
+      reader = new PMTiles(url, new ResolvedValueCache());
       defaultPMTilesReaders.set(url, reader);
     }
     return reader;
@@ -108,26 +113,40 @@ function getPMTilesReader(url: string, fetchImpl: typeof fetch | undefined): PMT
 
   let reader = readers.get(url);
   if (!reader) {
-    reader = new PMTilesReader(url, makeRangeFetcher(fetchImpl));
+    reader = new PMTiles(makeFetchSource(url, fetchImpl), new ResolvedValueCache());
     readers.set(url, reader);
   }
   return reader;
 }
 
-function makeRangeFetcher(fetchImpl: typeof fetch = fetch): RangeFetcher {
-  return async (url, offset, length, signal) => {
-    const headers = new Headers();
-    headers.set("Range", `bytes=${offset}-${offset + length - 1}`);
+function makeFetchSource(url: string, fetchImpl: typeof fetch) {
+  return {
+    getKey: () => url,
+    getBytes: async (offset: number, length: number, signal?: AbortSignal, etag?: string) => {
+      const headers = new Headers();
+      headers.set("Range", `bytes=${offset}-${offset + length - 1}`);
 
-    const response = await fetchImpl(url, { headers, signal });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch range ${offset}-${offset + length - 1}: HTTP ${response.status}`);
-    }
+      const response = await fetchImpl(url, { headers, signal });
+      if (!response.ok) {
+        throw new Error(`Failed to fetch range ${offset}-${offset + length - 1}: HTTP ${response.status}`);
+      }
 
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    if (response.status === 200 && bytes.length > length) {
-      throw new Error("Server did not honor range request");
+      const data = await response.arrayBuffer();
+      const responseEtag = response.headers.get("ETag") ?? undefined;
+      if (etag && responseEtag && responseEtag !== etag) {
+        throw new EtagMismatch(`PMTiles archive changed while reading: ${url}`);
+      }
+
+      const bytes = new Uint8Array(data);
+      if (response.status === 200 && bytes.length > length) {
+        throw new Error("Server did not honor range request");
+      }
+      return {
+        data,
+        etag: responseEtag,
+        cacheControl: response.headers.get("Cache-Control") ?? undefined,
+        expires: response.headers.get("Expires") ?? undefined
+      };
     }
-    return bytes;
   };
 }

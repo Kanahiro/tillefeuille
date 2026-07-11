@@ -1,4 +1,4 @@
-import { zxyToTileId } from "./pmtiles.js";
+import { zxyToTileId } from "pmtiles";
 import { concatBytes, writeVarint } from "./varint.js";
 
 const TILE_LAYER_KEY = (3 << 3) | 2;

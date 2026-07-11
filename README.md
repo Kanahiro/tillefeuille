@@ -8,8 +8,19 @@ request time. Give it one tile coordinate and a set of source definitions, and i
 fetches each source tile, prefixes every layer name with the source id, and
 returns one merged MVT payload.
 
-It is designed to be embedded in your own tile service, edge worker, or
-Fetch-compatible runtime. It does not ship an HTTP server.
+```mermaid
+flowchart LR
+  A[MVT] --> T((tillefeuille))
+  B[MVT] --> T
+  C[PMTiles] --> T
+  T --> O[1 MVT]
+```
+
+Its primary purpose is to run behind a server-side tile endpoint, such as a
+Cloudflare Worker. The endpoint can fetch from multiple tile sources and return
+one MVT to the client, so clients use a single tile source while the composition
+stays on the server. `tillefeuille` is designed to be embedded in that service;
+it does not ship an HTTP server.
 
 ## Features
 
@@ -160,7 +171,9 @@ pnpm run demo
 
 The demo builds the library and starts a Vite app that uses MapLibre GL JS. It
 registers a custom protocol that calls `mergeVectorTiles`, inspects the merged
-tile, and renders layers by geometry type for debugging.
+tile, and renders layers by geometry type. It exists for debugging and
+explanation only; production deployments should compose tiles in a server-side
+endpoint such as a Cloudflare Worker.
 
 The same demo is deployed to GitHub Pages when `main` is pushed:
 

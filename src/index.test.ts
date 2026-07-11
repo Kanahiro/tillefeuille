@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { decompressIfGzip, gzip } from "./compression.js";
 import { mergeVectorTiles } from "./index.js";
 import { listMvtLayerNames } from "./mvt.js";
@@ -23,6 +23,37 @@ describe("mergeVectorTiles", () => {
     });
 
     expect(listMvtLayerNames(tile)).toEqual(["roads:transportation", "water:water"]);
+  });
+
+  it("fetches sources in parallel", async () => {
+    let releaseFirstFetch!: () => void;
+    const firstFetch = new Promise<void>((resolve) => {
+      releaseFirstFetch = resolve;
+    });
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("roads")) {
+        await firstFetch;
+        return new Response(makeMvt(["transportation"]));
+      }
+      return new Response(makeMvt(["water"]));
+    }) as typeof globalThis.fetch;
+
+    const merging = mergeVectorTiles({
+      z: 0,
+      x: 0,
+      y: 0,
+      sources: {
+        roads: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
+        water: "https://tiles.example/water/{z}/{x}/{y}.mvt"
+      },
+      fetch
+    });
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    releaseFirstFetch();
+
+    expect(listMvtLayerNames(await merging)).toEqual(["roads:transportation", "water:water"]);
   });
 
   it("reads PMTiles archives through range requests", async () => {
