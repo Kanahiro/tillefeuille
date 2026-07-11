@@ -1,8 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import { decompressIfGzip, gzip } from "./compression.js";
+import { decompressIfGzip } from "./compression.js";
 import { mergeVectorTiles } from "./index.js";
 import { listMvtLayerNames } from "./mvt.js";
 import { makeMvt, makePMTilesArchive, makeRangeFetch } from "./test-helpers.js";
+
+async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
+  const stream = new Response(bytes).body;
+  if (!stream) {
+    throw new Error("Unable to create compression stream");
+  }
+  const compressed = stream.pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(compressed).arrayBuffer());
+}
 
 describe("mergeVectorTiles", () => {
   it("fetches HTTP URL templates and prefixes layer names", async () => {
@@ -72,7 +81,7 @@ describe("mergeVectorTiles", () => {
     expect(listMvtLayerNames(tile)).toEqual(["admin:boundary"]);
   });
 
-  it("accepts gzip source tiles and can gzip output", async () => {
+  it("accepts gzip-compressed source tiles", async () => {
     const source = await gzip(makeMvt(["poi"]));
 
     const tile = await mergeVectorTiles({
@@ -82,10 +91,9 @@ describe("mergeVectorTiles", () => {
       sources: {
         poi: "https://tiles.example/poi/{z}/{x}/{y}.mvt"
       },
-      fetch: makeRangeFetch({ "https://tiles.example/poi/0/0/0.mvt": source }),
-      outputCompression: "gzip"
+      fetch: makeRangeFetch({ "https://tiles.example/poi/0/0/0.mvt": source })
     });
 
-    expect(listMvtLayerNames(await decompressIfGzip(tile))).toEqual(["poi:poi"]);
+    expect(listMvtLayerNames(tile)).toEqual(["poi:poi"]);
   });
 });

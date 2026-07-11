@@ -29,9 +29,7 @@ it does not ship an HTTP server.
 - Fetch tiles from HTTP(S) URL templates using `{z}`, `{x}`, and `{y}` tokens.
 - Read PMTiles v3 archives over HTTP range requests.
 - Accept gzip-compressed source tiles.
-- Optionally return gzip-compressed output.
-- Use Web-standard APIs such as `fetch`, `AbortSignal`, `CompressionStream`, and
-  `DecompressionStream`.
+- Use Web-standard APIs such as `fetch`, `AbortSignal`, and `DecompressionStream`.
 
 ## Installation
 
@@ -63,25 +61,8 @@ return new Response(tile, {
 });
 ```
 
-By default, the returned `Uint8Array` is an uncompressed MVT. Set
-`outputCompression: "gzip"` when you want a gzip-compressed response body:
-
-```ts
-const tile = await mergeVectorTiles({
-  z,
-  x,
-  y,
-  sources,
-  outputCompression: "gzip"
-});
-
-return new Response(tile, {
-  headers: {
-    "content-type": "application/vnd.mapbox-vector-tile",
-    "content-encoding": "gzip"
-  }
-});
-```
+The returned `Uint8Array` is an uncompressed MVT. Apply response compression in
+the calling service when appropriate.
 
 ## API
 
@@ -103,7 +84,6 @@ Options:
 | `sources` | `Record<string, string>` | Source ids mapped to HTTP tile URL templates or PMTiles archive URLs. |
 | `fetch` | `typeof fetch` | Optional custom fetch implementation. Useful for tests and runtimes with wrapped fetch behavior. |
 | `signal` | `AbortSignal` | Optional abort signal passed to source requests. |
-| `outputCompression` | `"none" \| "gzip"` | Output compression. Defaults to uncompressed output. |
 | `skipMissing` | `boolean` | Whether to ignore missing source tiles. Defaults to `true`. |
 
 Missing source tiles are HTTP `404`, HTTP `204`, or absent PMTiles entries. When
@@ -158,7 +138,6 @@ tiles contain layers with the same name.
 - `Headers`
 - `AbortSignal`
 - `DecompressionStream` for gzip source tiles
-- `CompressionStream` for gzip output
 
 It is intended for runtimes such as modern Node.js, Cloudflare Workers, and other
 Fetch-compatible environments.

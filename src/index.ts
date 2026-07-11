@@ -1,4 +1,4 @@
-import { decompressIfGzip, gzip } from "./compression.js";
+import { decompressIfGzip } from "./compression.js";
 import { mergeMvtTiles, renameMvtLayers } from "./mvt.js";
 import { EtagMismatch, PMTiles, ResolvedValueCache } from "pmtiles";
 
@@ -9,7 +9,6 @@ export interface MergeVectorTilesOptions {
   sources: Record<string, string>;
   fetch?: typeof fetch;
   signal?: AbortSignal;
-  outputCompression?: "none" | "gzip";
   skipMissing?: boolean;
 }
 
@@ -53,8 +52,7 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
     renamedTiles.push(renameMvtLayers(tile, id));
   }
 
-  const merged = mergeMvtTiles(renamedTiles);
-  return options.outputCompression === "gzip" ? gzip(merged) : merged;
+  return mergeMvtTiles(renamedTiles);
 }
 
 async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Array | undefined> {

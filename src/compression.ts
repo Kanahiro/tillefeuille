@@ -39,20 +39,6 @@ export async function decompressIfGzip(bytes: Uint8Array): Promise<Uint8Array> {
   return decompress(bytes, Compression.Gzip);
 }
 
-export async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
-  if (typeof CompressionStream === "undefined") {
-    throw new Error("Gzip compression requires CompressionStream");
-  }
-
-  const stream = new Response(toArrayBuffer(bytes)).body;
-  if (!stream) {
-    throw new Error("Unable to create compression stream");
-  }
-
-  const compressed = stream.pipeThrough(new CompressionStream("gzip"));
-  return new Uint8Array(await new Response(compressed).arrayBuffer());
-}
-
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
 }
