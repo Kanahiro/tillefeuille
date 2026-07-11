@@ -4,8 +4,19 @@
   "description": "Merge multiple MVT sources into a prefixed multi-layer vector tile using Web-standard APIs.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Kanahiro/tillefeuille.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Kanahiro/tillefeuille/issues"
+  },
+  "homepage": "https://github.com/Kanahiro/tillefeuille#readme",
   "packageManager": "pnpm@11.10.0",
   "sideEffects": false,
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/"
+  },
   "files": [
     "dist",
     "README.md"

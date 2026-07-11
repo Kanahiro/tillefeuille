@@ -1,5 +1,8 @@
 # tillefeuille
 
+[![CI](https://github.com/Kanahiro/tillefeuille/actions/workflows/ci.yml/badge.svg)](https://github.com/Kanahiro/tillefeuille/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/tillefeuille?logo=npm&label=npm)](https://www.npmjs.com/package/tillefeuille)
+
 Merge multiple Mapbox Vector Tile (MVT) sources into a single prefixed,
 multi-layer vector tile.
 
@@ -168,6 +171,27 @@ pnpm test
 
 Before publishing, `pnpm pack` and `pnpm publish` run the `prepack` script,
 which builds the package and runs the test suite.
+
+## Releases
+
+Publishing is performed by GitHub Actions when a GitHub release is published.
+Create an annotated tag named `v<package-version>` (for example, `v0.1.1`),
+then create and publish the corresponding GitHub release.
+
+The workflow verifies that the tag matches `package.json`, runs the `prepack`
+checks, and publishes with npm provenance. Configure npm Trusted Publishing once
+for the `Kanahiro/tillefeuille` repository and the
+`publish.yml` workflow, allowing `npm publish` and setting its environment to
+`npm-publish`. The workflow uses an OIDC identity; do not add an npm access
+token as a GitHub Actions secret.
+
+For an approval gate, create the `npm-publish` environment in the repository
+settings and require a reviewer before deployment. The workflow targets that
+environment before it can publish.
+
+For an approval gate, create the `npm-publish` environment in the repository
+settings and require a reviewer before deployment. The workflow targets that
+environment before it can publish.
 
 ## License
 
