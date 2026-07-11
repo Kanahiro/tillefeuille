@@ -162,6 +162,10 @@ The demo builds the library and starts a Vite app that uses MapLibre GL JS. It
 registers a custom protocol that calls `mergeVectorTiles`, inspects the merged
 tile, and renders layers by geometry type for debugging.
 
+The same demo is deployed to GitHub Pages when `main` is pushed:
+
+https://kanahiro.github.io/tillefeuille/demo/
+
 ## Development
 
 ```sh

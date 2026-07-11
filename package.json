@@ -20,6 +20,7 @@
   "module": "./dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:demo": "vite build --base=/tillefeuille/ --outDir=pages --emptyOutDir",
     "test": "vitest run",
     "demo": "pnpm run build && vite --host 127.0.0.1",
     "prepack": "pnpm run build && pnpm test"
