@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { decompressIfGzip } from "./compression.js";
 import { mergeVectorTiles } from "./index.js";
-import { listMvtLayerNames } from "./mvt.js";
-import { makeMvt, makePMTilesArchive, makeRangeFetch } from "./test-helpers.js";
+import { listMvtLayerNames, makeMvt, makePMTilesArchive, makeRangeFetch } from "./test-helpers.js";
 
 async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
   const stream = new Response(bytes).body;

@@ -1,14 +1,10 @@
 import { zxyToTileId } from "pmtiles";
-import { concatBytes, writeVarint } from "./varint.js";
+import { concatBytes, readVarint, writeVarint, type Cursor } from "./varint.js";
 
 const TILE_LAYER_KEY = (3 << 3) | 2;
 const LAYER_NAME_KEY = (1 << 3) | 2;
-const LAYER_FEATURE_KEY = (2 << 3) | 2;
 const LAYER_VERSION_KEY = (15 << 3) | 0;
 const LAYER_EXTENT_KEY = (5 << 3) | 0;
-const FEATURE_TYPE_KEY = (3 << 3) | 0;
-
-export type TestGeometryType = "Point" | "LineString" | "Polygon";
 
 export function makeMvt(layerNames: string[]): Uint8Array {
   return concatBytes(
@@ -19,27 +15,13 @@ export function makeMvt(layerNames: string[]): Uint8Array {
   );
 }
 
-export function makeMvtWithGeometry(layers: Array<{ name: string; geometryTypes: TestGeometryType[] }>): Uint8Array {
-  return concatBytes(
-    layers.flatMap((spec) => {
-      const layer = makeLayer(spec.name, spec.geometryTypes);
-      return [writeVarint(TILE_LAYER_KEY), writeVarint(layer.length), layer];
-    })
-  );
-}
-
-export function makeLayer(name: string, geometryTypes: TestGeometryType[] = []): Uint8Array {
+export function makeLayer(name: string): Uint8Array {
   const nameBytes = new TextEncoder().encode(name);
   const parts = [
     writeVarint(LAYER_NAME_KEY),
     writeVarint(nameBytes.length),
     nameBytes
   ];
-
-  for (const geometryType of geometryTypes) {
-    const feature = makeFeature(geometryType);
-    parts.push(writeVarint(LAYER_FEATURE_KEY), writeVarint(feature.length), feature);
-  }
 
   parts.push(
     writeVarint(LAYER_VERSION_KEY),
@@ -51,19 +33,58 @@ export function makeLayer(name: string, geometryTypes: TestGeometryType[] = []):
   return concatBytes(parts);
 }
 
-function makeFeature(geometryType: TestGeometryType): Uint8Array {
-  return concatBytes([writeVarint(FEATURE_TYPE_KEY), writeVarint(toFeatureType(geometryType))]);
+export function listMvtLayerNames(tile: Uint8Array): string[] {
+  const cursor: Cursor = { bytes: tile, offset: 0 };
+  const names: string[] = [];
+
+  while (cursor.offset < tile.length) {
+    const key = readVarint(cursor);
+    if ((key >>> 3) === 3 && (key & 0x07) === 2) {
+      const layer = readBytes(cursor, readVarint(cursor));
+      const name = readLayerName(layer);
+      if (name) names.push(name);
+      continue;
+    }
+    skipValue(cursor, key & 0x07);
+  }
+
+  return names;
 }
 
-function toFeatureType(geometryType: TestGeometryType): number {
-  switch (geometryType) {
-    case "Point":
-      return 1;
-    case "LineString":
-      return 2;
-    case "Polygon":
-      return 3;
+function readLayerName(layer: Uint8Array): string | undefined {
+  const cursor: Cursor = { bytes: layer, offset: 0 };
+  while (cursor.offset < layer.length) {
+    const key = readVarint(cursor);
+    if ((key >>> 3) === 1 && (key & 0x07) === 2) {
+      return new TextDecoder().decode(readBytes(cursor, readVarint(cursor)));
+    }
+    skipValue(cursor, key & 0x07);
   }
+}
+
+function readBytes(cursor: Cursor, length: number): Uint8Array {
+  const end = cursor.offset + length;
+  if (end > cursor.bytes.length) throw new Error("Malformed protobuf message");
+  const bytes = cursor.bytes.subarray(cursor.offset, end);
+  cursor.offset = end;
+  return bytes;
+}
+
+function skipValue(cursor: Cursor, wireType: number): void {
+  if (wireType === 0) {
+    readVarint(cursor);
+    return;
+  }
+  if (wireType === 1 || wireType === 5) {
+    cursor.offset += wireType === 1 ? 8 : 4;
+    if (cursor.offset > cursor.bytes.length) throw new Error("Malformed protobuf message");
+    return;
+  }
+  if (wireType === 2) {
+    readBytes(cursor, readVarint(cursor));
+    return;
+  }
+  throw new Error(`Unsupported protobuf wire type: ${wireType}`);
 }
 
 export function makePMTilesArchive(z: number, x: number, y: number, tile: Uint8Array, metadata: unknown = {}): Uint8Array {

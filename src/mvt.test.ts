@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { listMvtLayerNames, listMvtLayers, mergeMvtTiles, renameMvtLayers } from "./mvt.js";
-import { makeMvt, makeMvtWithGeometry } from "./test-helpers.js";
+import { mergeMvtTiles, renameMvtLayers } from "./mvt.js";
+import { listMvtLayerNames, makeMvt } from "./test-helpers.js";
 
 describe("MVT wire operations", () => {
   it("renames layer names without decoding features", () => {
@@ -15,19 +15,5 @@ describe("MVT wire operations", () => {
     const merged = mergeMvtTiles([renameMvtLayers(makeMvt(["roads"]), "a"), renameMvtLayers(makeMvt(["roads"]), "b")]);
 
     expect(listMvtLayerNames(merged)).toEqual(["a:roads", "b:roads"]);
-  });
-
-  it("lists feature geometry types per layer", () => {
-    const tile = makeMvtWithGeometry([
-      { name: "roads", geometryTypes: ["LineString"] },
-      { name: "places", geometryTypes: ["Point"] },
-      { name: "mixed", geometryTypes: ["LineString", "Polygon", "LineString"] }
-    ]);
-
-    expect(listMvtLayers(tile)).toEqual([
-      { name: "roads", geometryTypes: ["LineString"] },
-      { name: "places", geometryTypes: ["Point"] },
-      { name: "mixed", geometryTypes: ["LineString", "Polygon"] }
-    ]);
   });
 });

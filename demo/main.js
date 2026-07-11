@@ -1,6 +1,6 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 import { mergeVectorTiles } from "../src/index.ts";
-import { listMvtLayers } from "../src/mvt.ts";
+import { listMvtLayers } from "./mvt.js";
 
 const maplibreglModule = await import("maplibre-gl");
 const maplibregl = maplibreglModule.default ?? maplibreglModule;
