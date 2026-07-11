@@ -1,0 +1,41 @@
+{
+  "name": "tillefeuille",
+  "version": "0.1.0",
+  "description": "Merge multiple MVT sources into a prefixed multi-layer vector tile using Web-standard APIs.",
+  "type": "module",
+  "license": "MIT",
+  "packageManager": "pnpm@11.10.0",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "module": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "demo": "pnpm run build && vite --host 127.0.0.1",
+    "prepack": "pnpm run build && pnpm test"
+  },
+  "keywords": [
+    "mvt",
+    "pmtiles",
+    "vector-tile",
+    "mapbox-vector-tile",
+    "cloudflare-workers"
+  ],
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "maplibre-gl": "^5.24.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.1.4",
+    "vitest": "^4.1.10"
+  }
+}
