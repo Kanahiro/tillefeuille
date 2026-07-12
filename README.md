@@ -30,8 +30,7 @@ it does not ship an HTTP server.
 - Merge multiple MVT sources into one MVT response.
 - Prefix layer names as `<source-id>:<original-layer-name>` to avoid collisions.
 - Fetch tiles from HTTP(S) URL templates using `{z}`, `{x}`, and `{y}` tokens.
-- Read PMTiles v3 archives over HTTP range requests or local files.
-- Read local MBTiles archives in Node.js.
+- Read PMTiles v3 archives over HTTP range requests.
 - Accept gzip-compressed source tiles.
 - Use Web-standard APIs such as `fetch`, `AbortSignal`, and `DecompressionStream`.
 
@@ -85,7 +84,7 @@ Options:
 | `z` | `number` | Tile zoom level. |
 | `x` | `number` | Tile column. |
 | `y` | `number` | Tile row. |
-| `sources` | `Record<string, string>` | Source ids mapped to HTTP tile URL templates, PMTiles archives, or local MBTiles archives. |
+| `sources` | `Record<string, string>` | Source ids mapped to HTTP tile URL templates or PMTiles archive URLs. |
 | `fetch` | `typeof fetch` | Optional custom fetch implementation. Useful for tests and runtimes with wrapped fetch behavior. |
 | `signal` | `AbortSignal` | Optional abort signal passed to source requests. |
 | `skipMissing` | `boolean` | Whether to ignore missing source tiles. Defaults to `true`. |
@@ -105,8 +104,7 @@ coordinate tokens:
 }
 ```
 
-PMTiles sources use the `pmtiles://` prefix followed by an HTTP(S) or local
-file archive URL:
+PMTiles sources use the `pmtiles://` prefix followed by the archive URL:
 
 ```ts
 {
@@ -114,22 +112,7 @@ file archive URL:
 }
 ```
 
-```ts
-{
-  admin: "pmtiles://file:///path/to/admin.pmtiles"
-}
-```
-
-Remote PMTiles archive servers must support HTTP range requests. Local PMTiles
-and MBTiles archives are supported in Node.js:
-
-```ts
-{
-  admin: "mbtiles://file:///path/to/admin.mbtiles"
-}
-```
-
-MBTiles only supports `file://` archive URLs; remote MBTiles URLs are rejected.
+For PMTiles sources, the archive server must support HTTP range requests.
 
 ## Layer Naming
 
