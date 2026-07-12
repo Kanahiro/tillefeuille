@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { decompressIfGzip } from "./compression.js";
 import { mergeVectorTiles } from "./index.js";
 import { listMvtLayerNames, makeMvt, makePMTilesArchive, makeRangeFetch } from "./test-helpers.js";
@@ -78,6 +83,59 @@ describe("mergeVectorTiles", () => {
     });
 
     expect(listMvtLayerNames(tile)).toEqual(["admin:boundary"]);
+  });
+
+  it("reads local PMTiles archives", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tillefeuille-"));
+    const path = join(directory, "admin.pmtiles");
+    await writeFile(path, makePMTilesArchive(3, 4, 2, makeMvt(["boundary"])));
+
+    try {
+      const tile = await mergeVectorTiles({
+        z: 3,
+        x: 4,
+        y: 2,
+        sources: { admin: `pmtiles://${pathToFileURL(path).href}` }
+      });
+      expect(listMvtLayerNames(tile)).toEqual(["admin:boundary"]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("reads local MBTiles archives", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "tillefeuille-"));
+    const path = join(directory, "admin.mbtiles");
+    const source = await gzip(makeMvt(["boundary"]));
+    const database = new DatabaseSync(path);
+    database.exec("CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB)");
+    database
+      .prepare("INSERT INTO tiles VALUES (?, ?, ?, ?)")
+      .run(3, 4, 2 ** 3 - 1 - 2, source);
+    database.close();
+
+    try {
+      const tile = await mergeVectorTiles({
+        z: 3,
+        x: 4,
+        y: 2,
+        sources: { admin: `mbtiles://${pathToFileURL(path).href}` }
+      });
+      expect(listMvtLayerNames(tile)).toEqual(["admin:boundary"]);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects non-file MBTiles archives", async () => {
+    await expect(
+      mergeVectorTiles({
+        z: 0,
+        x: 0,
+        y: 0,
+        sources: { admin: "mbtiles://https://tiles.example/admin.mbtiles" }
+      })
+    ).rejects.toThrow("Only file:// URLs are supported");
   });
 
   it("accepts gzip-compressed source tiles", async () => {

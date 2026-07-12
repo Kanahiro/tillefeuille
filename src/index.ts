@@ -63,6 +63,10 @@ async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Arra
     return tile ? new Uint8Array(tile.data) : undefined;
   }
 
+  if (options.url.startsWith("mbtiles://")) {
+    return getMBTilesTile(options.url.slice("mbtiles://".length), options.z, options.x, options.y);
+  }
+
   const url = expandTileUrlTemplate(options.url, options.z, options.x, options.y);
   const response = await (options.fetch ?? fetch)(url, { signal: options.signal });
 
@@ -94,6 +98,20 @@ function expandTileUrlTemplate(template: string, z: number, x: number, y: number
 }
 
 function getPMTilesReader(url: string, fetchImpl: typeof fetch | undefined): PMTiles {
+  const fileUrl = getFileUrl(url, "PMTiles");
+  if (fileUrl) {
+    let reader = defaultPMTilesReaders.get(url);
+    if (!reader) {
+      reader = new PMTiles(makeFileSource(fileUrl), new ResolvedValueCache());
+      defaultPMTilesReaders.set(url, reader);
+    }
+    return reader;
+  }
+
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    throw new Error(`Unsupported PMTiles archive URL: ${url}`);
+  }
+
   if (!fetchImpl) {
     let reader = defaultPMTilesReaders.get(url);
     if (!reader) {
@@ -115,6 +133,57 @@ function getPMTilesReader(url: string, fetchImpl: typeof fetch | undefined): PMT
     readers.set(url, reader);
   }
   return reader;
+}
+
+function getFileUrl(url: string, sourceType: string): URL | undefined {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error(`Unsupported ${sourceType} archive URL: ${url}`);
+  }
+
+  return parsed.protocol === "file:" ? parsed : undefined;
+}
+
+function makeFileSource(url: URL) {
+  return {
+    getKey: () => url.href,
+    getBytes: async (offset: number, length: number) => {
+      const { open } = await import("node:fs/promises");
+      const file = await open(url, "r");
+      try {
+        const data = new Uint8Array(length);
+        const { bytesRead } = await file.read(data, 0, length, offset);
+        return {
+          data: data.buffer.slice(0, bytesRead),
+          etag: undefined,
+          cacheControl: undefined,
+          expires: undefined
+        };
+      } finally {
+        await file.close();
+      }
+    }
+  };
+}
+
+async function getMBTilesTile(url: string, z: number, x: number, y: number): Promise<Uint8Array | undefined> {
+  const fileUrl = getFileUrl(url, "MBTiles");
+  if (!fileUrl) {
+    throw new Error(`Unsupported MBTiles archive URL: ${url}. Only file:// URLs are supported.`);
+  }
+
+  const { DatabaseSync } = await import("node:sqlite");
+  const database = new DatabaseSync(fileUrl, { readOnly: true });
+  try {
+    const row = database
+      .prepare("SELECT tile_data FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?")
+      .get(z, x, 2 ** z - 1 - y) as { tile_data?: Uint8Array } | undefined;
+    return row?.tile_data ? decompressIfGzip(new Uint8Array(row.tile_data)) : undefined;
+  } finally {
+    database.close();
+  }
 }
 
 function makeFetchSource(url: string, fetchImpl: typeof fetch) {
