@@ -1,15 +1,31 @@
 import { decompressIfGzip } from "./compression.js";
-import { mergeMvtTiles, renameMvtLayers } from "./mvt.js";
+import { mergeMvtTiles, type MergeLogger } from "./mvt.js";
 import { EtagMismatch, PMTiles, ResolvedValueCache } from "pmtiles";
+
+export type { IncompatibleLayerWarning, MergeLogger } from "./mvt.js";
 
 export interface MergeVectorTilesOptions {
   z: number;
   x: number;
   y: number;
-  sources: Record<string, string>;
+  sources: Record<string, VectorTileSource>;
   fetch?: typeof fetch;
   signal?: AbortSignal;
   skipMissing?: boolean;
+  getLayerName?: (key: string, layerName: string) => string;
+  logger?: MergeLogger;
+}
+
+export interface VectorTileSource {
+  url: string;
+  minzoom?: number;
+  maxzoom?: number;
+  layers?: LayerFilter;
+}
+
+export interface LayerFilter {
+  include?: readonly string[];
+  exclude?: readonly string[];
 }
 
 interface ResolveSourceOptions {
@@ -26,22 +42,33 @@ const customPMTilesReaders = new WeakMap<typeof fetch, Map<string, PMTiles>>();
 
 export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promise<Uint8Array> {
   const skipMissing = options.skipMissing ?? true;
-  const renamedTiles: Uint8Array[] = [];
+  const tiles: Array<{
+    key: string;
+    tile: Uint8Array;
+    includedLayerNames?: ReadonlySet<string>;
+    excludedLayerNames: ReadonlySet<string>;
+  }> = [];
   const sourceTiles = await Promise.all(
-    Object.entries(options.sources).map(async ([id, url]) => ({
-      id,
-      tile: await fetchSourceTile({
-        z: options.z,
-        x: options.x,
-        y: options.y,
-        url,
-        fetch: options.fetch,
-        signal: options.signal
+    Object.entries(options.sources)
+      .filter(([, source]) => isSourceAvailableAtZoom(source, options.z))
+      .map(async ([id, { url, layers }]) => {
+      return {
+        id,
+        includedLayerNames: layers?.include ? new Set(layers.include) : undefined,
+        excludedLayerNames: new Set(layers?.exclude),
+        tile: await fetchSourceTile({
+          z: options.z,
+          x: options.x,
+          y: options.y,
+          url,
+          fetch: options.fetch,
+          signal: options.signal
+        })
+      };
       })
-    }))
   );
 
-  for (const { id, tile } of sourceTiles) {
+  for (const { id, tile, includedLayerNames, excludedLayerNames } of sourceTiles) {
     if (!tile) {
       if (skipMissing) {
         continue;
@@ -49,10 +76,14 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
       throw new Error(`Source tile not found: ${id}`);
     }
 
-    renamedTiles.push(renameMvtLayers(tile, id));
+    tiles.push({ key: id, tile, includedLayerNames, excludedLayerNames });
   }
 
-  return mergeMvtTiles(renamedTiles);
+  return mergeMvtTiles(tiles, options.getLayerName, options.logger);
+}
+
+function isSourceAvailableAtZoom(source: VectorTileSource, z: number): boolean {
+  return (source.minzoom === undefined || z >= source.minzoom) && (source.maxzoom === undefined || z <= source.maxzoom);
 }
 
 async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Array | undefined> {

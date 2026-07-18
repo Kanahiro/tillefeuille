@@ -13,7 +13,7 @@ async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
 }
 
 describe("mergeVectorTiles", () => {
-  it("fetches HTTP URL templates and prefixes layer names", async () => {
+  it("fetches HTTP URL templates and keeps layer names", async () => {
     const files = {
       "https://tiles.example/roads/14/1/2.mvt": makeMvt(["transportation"]),
       "https://tiles.example/water/14/1/2.mvt": makeMvt(["water"])
@@ -24,13 +24,13 @@ describe("mergeVectorTiles", () => {
       x: 1,
       y: 2,
       sources: {
-        roads: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
-        water: "https://tiles.example/water/{z}/{x}/{y}.mvt"
+        roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" },
+        water: { url: "https://tiles.example/water/{z}/{x}/{y}.mvt" }
       },
       fetch: makeRangeFetch(files)
     });
 
-    expect(listMvtLayerNames(tile)).toEqual(["roads:transportation", "water:water"]);
+    expect(listMvtLayerNames(tile)).toEqual(["transportation", "water"]);
   });
 
   it("fetches sources in parallel", async () => {
@@ -52,8 +52,8 @@ describe("mergeVectorTiles", () => {
       x: 0,
       y: 0,
       sources: {
-        roads: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
-        water: "https://tiles.example/water/{z}/{x}/{y}.mvt"
+        roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" },
+        water: { url: "https://tiles.example/water/{z}/{x}/{y}.mvt" }
       },
       fetch
     });
@@ -61,7 +61,7 @@ describe("mergeVectorTiles", () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     releaseFirstFetch();
 
-    expect(listMvtLayerNames(await merging)).toEqual(["roads:transportation", "water:water"]);
+    expect(listMvtLayerNames(await merging)).toEqual(["transportation", "water"]);
   });
 
   it("reads PMTiles archives through range requests", async () => {
@@ -72,12 +72,12 @@ describe("mergeVectorTiles", () => {
       x: 4,
       y: 2,
       sources: {
-        admin: "pmtiles://https://tiles.example/admin.pmtiles"
+        admin: { url: "pmtiles://https://tiles.example/admin.pmtiles" }
       },
       fetch: makeRangeFetch({ "https://tiles.example/admin.pmtiles": archive })
     });
 
-    expect(listMvtLayerNames(tile)).toEqual(["admin:boundary"]);
+    expect(listMvtLayerNames(tile)).toEqual(["boundary"]);
   });
 
   it("accepts gzip-compressed source tiles", async () => {
@@ -88,11 +88,116 @@ describe("mergeVectorTiles", () => {
       x: 0,
       y: 0,
       sources: {
-        poi: "https://tiles.example/poi/{z}/{x}/{y}.mvt"
+        poi: { url: "https://tiles.example/poi/{z}/{x}/{y}.mvt" }
       },
       fetch: makeRangeFetch({ "https://tiles.example/poi/0/0/0.mvt": source })
     });
 
-    expect(listMvtLayerNames(tile)).toEqual(["poi:poi"]);
+    expect(listMvtLayerNames(tile)).toEqual(["poi"]);
   });
+
+  it("uses getLayerName to derive layer names from source keys", async () => {
+    const getLayerName = vi.fn((key: string, layerName: string) => `${key}:${layerName}`);
+
+    const tile = await mergeVectorTiles({
+      z: 0,
+      x: 0,
+      y: 0,
+      sources: {
+        roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" },
+        water: { url: "https://tiles.example/water/{z}/{x}/{y}.mvt" }
+      },
+      fetch: makeRangeFetch({
+        "https://tiles.example/roads/0/0/0.mvt": makeMvt(["transportation"]),
+        "https://tiles.example/water/0/0/0.mvt": makeMvt(["water"])
+      }),
+      getLayerName
+    });
+
+    expect(listMvtLayerNames(tile)).toEqual(["roads:transportation", "water:water"]);
+    expect(getLayerName.mock.calls).toEqual([
+      ["roads", "transportation"],
+      ["water", "water"]
+    ]);
+  });
+
+  it("excludes original layer names from an individual source", async () => {
+    const getLayerName = vi.fn((key: string, layerName: string) => `${key}:${layerName}`);
+
+    const tile = await mergeVectorTiles({
+      z: 0,
+      x: 0,
+      y: 0,
+      sources: {
+        roads: {
+          url: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
+          layers: { exclude: ["transportation"] }
+        },
+        water: { url: "https://tiles.example/water/{z}/{x}/{y}.mvt" }
+      },
+      fetch: makeRangeFetch({
+        "https://tiles.example/roads/0/0/0.mvt": makeMvt(["transportation", "place"]),
+        "https://tiles.example/water/0/0/0.mvt": makeMvt(["water"])
+      }),
+      getLayerName
+    });
+
+    expect(listMvtLayerNames(tile)).toEqual(["roads:place", "water:water"]);
+    expect(getLayerName.mock.calls).toEqual([
+      ["roads", "place"],
+      ["water", "water"]
+    ]);
+  });
+
+  it("includes only selected original layer names and lets exclude take precedence", async () => {
+    const getLayerName = vi.fn((key: string, layerName: string) => `${key}:${layerName}`);
+
+    const tile = await mergeVectorTiles({
+      z: 0,
+      x: 0,
+      y: 0,
+      sources: {
+        roads: {
+          url: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
+          layers: {
+            include: ["transportation", "place"],
+            exclude: ["transportation"]
+          }
+        }
+      },
+      fetch: makeRangeFetch({
+        "https://tiles.example/roads/0/0/0.mvt": makeMvt(["transportation", "place", "building"])
+      }),
+      getLayerName
+    });
+
+    expect(listMvtLayerNames(tile)).toEqual(["roads:place"]);
+    expect(getLayerName.mock.calls).toEqual([["roads", "place"]]);
+  });
+
+  it("fetches a source only within its inclusive zoom range", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("active")) return new Response(makeMvt(["active"]));
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof globalThis.fetch;
+
+    const tile = await mergeVectorTiles({
+      z: 5,
+      x: 0,
+      y: 0,
+      sources: {
+        below: { url: "https://tiles.example/below/{z}/{x}/{y}.mvt", maxzoom: 4 },
+        active: { url: "https://tiles.example/active/{z}/{x}/{y}.mvt", minzoom: 5, maxzoom: 5 },
+        above: { url: "https://tiles.example/above/{z}/{x}/{y}.mvt", minzoom: 6 }
+      },
+      fetch,
+      skipMissing: false
+    });
+
+    expect(listMvtLayerNames(tile)).toEqual(["active"]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith("https://tiles.example/active/5/0/0.mvt", expect.anything());
+  });
+
 });
