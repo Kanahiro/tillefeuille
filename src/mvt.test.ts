@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mergeMvtTiles } from "./mvt.js";
 import { listMvtLayerNames, listMvtLayers, makeLayer, makeMvt } from "./test-helpers.js";
+import { concatBytes, writeVarint } from "./varint.js";
 
 describe("MVT wire operations", () => {
   it("keeps layer names unchanged by default", () => {
@@ -54,6 +55,7 @@ describe("MVT wire operations", () => {
     expect(listMvtLayers(merged)[0]).toEqual({
       name: "transport",
       extent: 4096,
+      version: 2,
       keys: ["kind"],
       values: ["road", "river"],
       features: [
@@ -71,7 +73,28 @@ describe("MVT wire operations", () => {
     ]);
 
     expect(listMvtLayers(merged)).toEqual([
-      { name: "roads", extent: 4096, keys: [], values: [], features: [] }
+      { name: "roads", extent: 4096, version: 2, keys: [], values: [], features: [] }
+    ]);
+  });
+
+  it("ignores duplicate scalar layer fields after the first occurrence", () => {
+    const original = makeLayer("roads");
+    const duplicateFields = concatBytes([
+      writeVarint(10),
+      writeVarint(7),
+      new TextEncoder().encode("ignored"),
+      writeVarint(40),
+      writeVarint(8192),
+      writeVarint(120),
+      writeVarint(3)
+    ]);
+    const layer = concatBytes([original, duplicateFields]);
+    const tile = concatBytes([writeVarint(26), writeVarint(layer.length), layer]);
+
+    const merged = mergeMvtTiles([{ key: "source", tile }], (key, name) => `${key}:${name}`);
+
+    expect(listMvtLayers(merged)).toEqual([
+      { name: "source:roads", extent: 4096, version: 2, keys: [], values: [], features: [] }
     ]);
   });
 });

@@ -29,6 +29,7 @@ interface MvtLayerOptions {
 export interface MvtLayerSummary {
   name?: string;
   extent?: number;
+  version?: number;
   keys: string[];
   values: string[];
   features: Array<{ tags: number[]; type?: number }>;
@@ -151,6 +152,10 @@ function readLayer(bytes: Uint8Array): MvtLayerSummary {
     }
     if (fieldNumber === 5 && wireType === 0) {
       layer.extent = readVarint(cursor);
+      continue;
+    }
+    if (fieldNumber === 15 && wireType === 0) {
+      layer.version = readVarint(cursor);
       continue;
     }
     skipValue(cursor, wireType);

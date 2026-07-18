@@ -104,8 +104,11 @@ function parseLayer(
     const fieldNumber = fieldKey >>> 3;
     const wireType = fieldKey & 0x07;
 
-    if (fieldNumber === LAYER_NAME_FIELD && wireType === WIRE_LENGTH_DELIMITED && layer.name === undefined) {
-      layer.name = getLayerName(sourceKey, decodeString(readBytes(cursor, readVarint(cursor))));
+    if (fieldNumber === LAYER_NAME_FIELD && wireType === WIRE_LENGTH_DELIMITED) {
+      const name = decodeString(readBytes(cursor, readVarint(cursor)));
+      if (layer.name === undefined) {
+        layer.name = getLayerName(sourceKey, name);
+      }
       continue;
     }
     if (fieldNumber === LAYER_FEATURES_FIELD && wireType === WIRE_LENGTH_DELIMITED) {
@@ -120,12 +123,18 @@ function parseLayer(
       layer.values.push(readBytes(cursor, readVarint(cursor)));
       continue;
     }
-    if (fieldNumber === LAYER_EXTENT_FIELD && wireType === WIRE_VARINT && layer.extent === undefined) {
-      layer.extent = readVarint(cursor);
+    if (fieldNumber === LAYER_EXTENT_FIELD && wireType === WIRE_VARINT) {
+      const extent = readVarint(cursor);
+      if (layer.extent === undefined) {
+        layer.extent = extent;
+      }
       continue;
     }
-    if (fieldNumber === LAYER_VERSION_FIELD && wireType === WIRE_VARINT && layer.version === undefined) {
-      layer.version = readVarint(cursor);
+    if (fieldNumber === LAYER_VERSION_FIELD && wireType === WIRE_VARINT) {
+      const version = readVarint(cursor);
+      if (layer.version === undefined) {
+        layer.version = version;
+      }
       continue;
     }
 
