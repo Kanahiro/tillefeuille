@@ -13,8 +13,8 @@ preserved by default and can be customized from the source key.
 
 ```mermaid
 flowchart LR
-  A[MVT] --> T((tillefeuille))
-  B[MVT] --> T
+  A[z/x/y.pbf] --> T((tillefeuille))
+  B[z/x/y.pbf] --> T
   C[PMTiles] --> T
   T --> O[1 MVT]
 ```
