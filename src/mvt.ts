@@ -38,6 +38,7 @@ interface ParsedFeature {
 }
 
 interface LayerGroup {
+  sourceKey: string;
   layer: ParsedLayer;
   keys: Uint8Array[];
   values: Uint8Array[];
@@ -46,9 +47,24 @@ interface LayerGroup {
   features: Array<{ feature: ParsedFeature; keyIndexes: number[]; valueIndexes: number[] }>;
 }
 
+export interface IncompatibleLayerWarning {
+  code: "incompatible-layer";
+  layerName: string;
+  sourceKey: string;
+  existingSourceKey: string;
+  reasons: readonly ("version" | "extent")[];
+  version: { existing?: number; incoming?: number };
+  extent: { existing?: number; incoming?: number };
+}
+
+export interface MergeLogger {
+  warn(warning: IncompatibleLayerWarning): void;
+}
+
 export function mergeMvtTiles(
   tiles: MvtTile[],
-  getLayerName: (key: string, layerName: string) => string = (_key, layerName) => layerName
+  getLayerName: (key: string, layerName: string) => string = (_key, layerName) => layerName,
+  logger?: MergeLogger
 ): Uint8Array {
   const groups: LayerGroup[] = [];
   const groupsByName = new Map<string, LayerGroup>();
@@ -85,7 +101,7 @@ export function mergeMvtTiles(
         continue;
       }
       if (layer.name === undefined) {
-        groups.push(createLayerGroup(layer));
+        groups.push(createLayerGroup(layer, sourceKey));
         continue;
       }
 
@@ -94,8 +110,20 @@ export function mergeMvtTiles(
         appendLayer(existing, layer);
         continue;
       }
+      if (existing) {
+        logger?.warn({
+          code: "incompatible-layer",
+          layerName: layer.name,
+          sourceKey,
+          existingSourceKey: existing.sourceKey,
+          reasons: getIncompatibilityReasons(existing.layer, layer),
+          version: { existing: existing.layer.version, incoming: layer.version },
+          extent: { existing: existing.layer.extent, incoming: layer.extent }
+        });
+        continue;
+      }
       if (!existing) {
-        const group = createLayerGroup(layer);
+        const group = createLayerGroup(layer, sourceKey);
         groups.push(group);
         groupsByName.set(layer.name, group);
       }
@@ -197,8 +225,9 @@ function parseFeature(bytes: Uint8Array): ParsedFeature {
   return { tags, otherFields };
 }
 
-function createLayerGroup(layer: ParsedLayer): LayerGroup {
+function createLayerGroup(layer: ParsedLayer, sourceKey: string): LayerGroup {
   const group: LayerGroup = {
+    sourceKey,
     layer,
     keys: [],
     values: [],
@@ -234,6 +263,17 @@ function canMergeLayers(first: ParsedLayer, next: ParsedLayer): boolean {
   // Geometry command coordinates are meaningful only within a shared extent;
   // different MVT versions may also use an incompatible wire contract.
   return first.version !== undefined && first.version === next.version && first.extent !== undefined && first.extent === next.extent;
+}
+
+function getIncompatibilityReasons(first: ParsedLayer, next: ParsedLayer): Array<"version" | "extent"> {
+  const reasons: Array<"version" | "extent"> = [];
+  if (first.version === undefined || first.version !== next.version) {
+    reasons.push("version");
+  }
+  if (first.extent === undefined || first.extent !== next.extent) {
+    reasons.push("extent");
+  }
+  return reasons;
 }
 
 function serializeLayer(group: LayerGroup): Uint8Array {

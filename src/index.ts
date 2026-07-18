@@ -1,6 +1,8 @@
 import { decompressIfGzip } from "./compression.js";
-import { mergeMvtTiles } from "./mvt.js";
+import { mergeMvtTiles, type MergeLogger } from "./mvt.js";
 import { EtagMismatch, PMTiles, ResolvedValueCache } from "pmtiles";
+
+export type { IncompatibleLayerWarning, MergeLogger } from "./mvt.js";
 
 export interface MergeVectorTilesOptions {
   z: number;
@@ -11,12 +13,17 @@ export interface MergeVectorTilesOptions {
   signal?: AbortSignal;
   skipMissing?: boolean;
   getLayerName?: (key: string, layerName: string) => string;
+  logger?: MergeLogger;
 }
 
 export interface VectorTileSource {
   url: string;
   minzoom?: number;
   maxzoom?: number;
+  layers?: LayerFilter;
+}
+
+export interface LayerFilter {
   include?: readonly string[];
   exclude?: readonly string[];
 }
@@ -44,11 +51,11 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
   const sourceTiles = await Promise.all(
     Object.entries(options.sources)
       .filter(([, source]) => isSourceAvailableAtZoom(source, options.z))
-      .map(async ([id, { url, include, exclude = [] }]) => {
+      .map(async ([id, { url, layers }]) => {
       return {
         id,
-        includedLayerNames: include ? new Set(include) : undefined,
-        excludedLayerNames: new Set(exclude),
+        includedLayerNames: layers?.include ? new Set(layers.include) : undefined,
+        excludedLayerNames: new Set(layers?.exclude),
         tile: await fetchSourceTile({
           z: options.z,
           x: options.x,
@@ -72,7 +79,7 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
     tiles.push({ key: id, tile, includedLayerNames, excludedLayerNames });
   }
 
-  return mergeMvtTiles(tiles, options.getLayerName);
+  return mergeMvtTiles(tiles, options.getLayerName, options.logger);
 }
 
 function isSourceAvailableAtZoom(source: VectorTileSource, z: number): boolean {

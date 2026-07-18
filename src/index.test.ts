@@ -131,7 +131,7 @@ describe("mergeVectorTiles", () => {
       sources: {
         roads: {
           url: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
-          exclude: ["transportation"]
+          layers: { exclude: ["transportation"] }
         },
         water: { url: "https://tiles.example/water/{z}/{x}/{y}.mvt" }
       },
@@ -159,8 +159,10 @@ describe("mergeVectorTiles", () => {
       sources: {
         roads: {
           url: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
-          include: ["transportation", "place"],
-          exclude: ["transportation"]
+          layers: {
+            include: ["transportation", "place"],
+            exclude: ["transportation"]
+          }
         }
       },
       fetch: makeRangeFetch({
@@ -197,4 +199,5 @@ describe("mergeVectorTiles", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledWith("https://tiles.example/active/5/0/0.mvt", expect.anything());
   });
+
 });

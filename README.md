@@ -56,8 +56,10 @@ const tile = await mergeVectorTiles({
       url: "https://example.com/basemap/{z}/{x}/{y}.mvt",
       minzoom: 8,
       maxzoom: 16,
-      include: ["transportation", "water"],
-      exclude: ["building"]
+      layers: {
+        include: ["transportation", "water"],
+        exclude: ["building"]
+      }
     },
     roads: { url: "https://example.com/roads/{z}/{x}/{y}.mvt" },
     poi: { url: "https://example.com/poi/{z}/{x}/{y}.mvt" },
@@ -92,11 +94,12 @@ Options:
 | `z` | `number` | Tile zoom level. |
 | `x` | `number` | Tile column. |
 | `y` | `number` | Tile row. |
-| `sources` | `Record<string, VectorTileSource>` | Source ids mapped to `{ url, minzoom?, maxzoom?, include?, exclude? }` definitions. |
+| `sources` | `Record<string, VectorTileSource>` | Source ids mapped to `{ url, minzoom?, maxzoom?, layers?: { include?, exclude? } }` definitions. |
 | `fetch` | `typeof fetch` | Optional custom fetch implementation. Useful for tests and runtimes with wrapped fetch behavior. |
 | `signal` | `AbortSignal` | Optional abort signal passed to source requests. |
 | `skipMissing` | `boolean` | Whether to ignore missing source tiles. Defaults to `true`. |
 | `getLayerName` | `(key: string, layerName: string) => string` | Optional function that returns an output layer name from the source key and original name. |
+| `logger` | `{ warn(warning): void }` | Optional logger notified when a same-named layer is skipped because its MVT version or extent cannot be merged. |
 
 Missing source tiles are HTTP `404`, HTTP `204`, or absent PMTiles entries. When
 `skipMissing` is `true`, they are omitted from the merged tile. When
@@ -113,16 +116,19 @@ include all three tile coordinate tokens:
 }
 ```
 
-PMTiles sources use the `pmtiles://` prefix followed by the archive URL. Use
-`include` to retain selected original layer names, and `exclude` to remove them,
-before they are renamed and merged. If both specify a name, `exclude` wins:
+PMTiles sources use the `pmtiles://` prefix followed by the archive URL.
+`layers.include` retains selected original layer names, and `layers.exclude`
+removes them, before they are renamed and merged. These filters apply to both
+HTTP and PMTiles sources. If both specify a name, `layers.exclude` wins:
 
 ```ts
 {
   admin: {
     url: "pmtiles://https://tiles.example.com/admin.pmtiles",
-    include: ["boundary", "building", "poi"],
-    exclude: ["building", "poi"]
+    layers: {
+      include: ["boundary", "building", "poi"],
+      exclude: ["building", "poi"]
+    }
   }
 }
 ```
@@ -155,6 +161,15 @@ roads:transportation
 Layers with the same output name are merged when they use the same MVT version
 and coordinate `extent`; their features and attribute dictionaries are combined.
 When those values differ, the first layer in `sources` insertion order is kept.
+Set `logger` to receive an `incompatible-layer` warning with the skipped and
+retained source keys, their MVT versions and extents, and the mismatched fields:
+
+```ts
+const tile = await mergeVectorTiles({
+  // ...
+  logger: console
+});
+```
 
 ## Runtime Requirements
 

@@ -6,8 +6,14 @@ const maplibreglModule = await import("maplibre-gl");
 const maplibregl = maplibreglModule.default ?? maplibreglModule;
 
 const defaultSources = {
-  osm: { url: "pmtiles://https://tile.openstreetmap.jp/static/planet.pmtiles" },
-  gsi: { url: "https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf" }
+  osm: {
+    url: "pmtiles://https://tile.openstreetmap.jp/static/planet.pmtiles",
+    layers: { include: ["poi"] }
+  },
+  gsi: {
+    url: "https://cyberjapandata.gsi.go.jp/xyz/experimental_bvmap/{z}/{x}/{y}.pbf",
+    layers: { exclude: ["label"] }
+  }
 };
 
 let sources = { ...defaultSources };

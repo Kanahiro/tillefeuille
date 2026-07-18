@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mergeMvtTiles } from "./mvt.js";
 import { listMvtLayerNames, listMvtLayers, makeLayer, makeMvt } from "./test-helpers.js";
 import { concatBytes, writeVarint } from "./varint.js";
@@ -67,14 +67,24 @@ describe("MVT wire operations", () => {
 
   it("keeps the first layer when same-named layers use different extents", () => {
     const tile = (layer: Uint8Array) => new Uint8Array([26, layer.length, ...layer]);
+    const logger = { warn: vi.fn() };
     const merged = mergeMvtTiles([
       { key: "a", tile: tile(makeLayer("roads", { extent: 4096 })) },
       { key: "b", tile: tile(makeLayer("roads", { extent: 8192 })) }
-    ]);
+    ], undefined, logger);
 
     expect(listMvtLayers(merged)).toEqual([
       { name: "roads", extent: 4096, version: 2, keys: [], values: [], features: [] }
     ]);
+    expect(logger.warn).toHaveBeenCalledWith({
+      code: "incompatible-layer",
+      layerName: "roads",
+      sourceKey: "b",
+      existingSourceKey: "a",
+      reasons: ["extent"],
+      version: { existing: 2, incoming: 2 },
+      extent: { existing: 4096, incoming: 8192 }
+    });
   });
 
   it("ignores duplicate scalar layer fields after the first occurrence", () => {
