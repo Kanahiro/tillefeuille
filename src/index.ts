@@ -1,5 +1,5 @@
 import { decompressIfGzip } from "./compression.js";
-import { mergeMvtTiles, renameMvtLayers } from "./mvt.js";
+import { mergeMvtTiles } from "./mvt.js";
 import { EtagMismatch, PMTiles, ResolvedValueCache } from "pmtiles";
 
 export interface MergeVectorTilesOptions {
@@ -10,6 +10,7 @@ export interface MergeVectorTilesOptions {
   fetch?: typeof fetch;
   signal?: AbortSignal;
   skipMissing?: boolean;
+  getLayerName?: (key: string, layerName: string) => string;
 }
 
 interface ResolveSourceOptions {
@@ -26,7 +27,7 @@ const customPMTilesReaders = new WeakMap<typeof fetch, Map<string, PMTiles>>();
 
 export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promise<Uint8Array> {
   const skipMissing = options.skipMissing ?? true;
-  const renamedTiles: Uint8Array[] = [];
+  const tiles: Array<{ key: string; tile: Uint8Array }> = [];
   const sourceTiles = await Promise.all(
     Object.entries(options.sources).map(async ([id, url]) => ({
       id,
@@ -49,10 +50,10 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
       throw new Error(`Source tile not found: ${id}`);
     }
 
-    renamedTiles.push(renameMvtLayers(tile, id));
+    tiles.push({ key: id, tile });
   }
 
-  return mergeMvtTiles(renamedTiles);
+  return mergeMvtTiles(tiles, options.getLayerName);
 }
 
 async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Array | undefined> {

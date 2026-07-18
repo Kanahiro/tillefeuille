@@ -13,7 +13,7 @@ async function gzip(bytes: Uint8Array): Promise<Uint8Array> {
 }
 
 describe("mergeVectorTiles", () => {
-  it("fetches HTTP URL templates and prefixes layer names", async () => {
+  it("fetches HTTP URL templates and keeps layer names", async () => {
     const files = {
       "https://tiles.example/roads/14/1/2.mvt": makeMvt(["transportation"]),
       "https://tiles.example/water/14/1/2.mvt": makeMvt(["water"])
@@ -30,7 +30,7 @@ describe("mergeVectorTiles", () => {
       fetch: makeRangeFetch(files)
     });
 
-    expect(listMvtLayerNames(tile)).toEqual(["roads:transportation", "water:water"]);
+    expect(listMvtLayerNames(tile)).toEqual(["transportation", "water"]);
   });
 
   it("fetches sources in parallel", async () => {
@@ -61,7 +61,7 @@ describe("mergeVectorTiles", () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
     releaseFirstFetch();
 
-    expect(listMvtLayerNames(await merging)).toEqual(["roads:transportation", "water:water"]);
+    expect(listMvtLayerNames(await merging)).toEqual(["transportation", "water"]);
   });
 
   it("reads PMTiles archives through range requests", async () => {
@@ -77,7 +77,7 @@ describe("mergeVectorTiles", () => {
       fetch: makeRangeFetch({ "https://tiles.example/admin.pmtiles": archive })
     });
 
-    expect(listMvtLayerNames(tile)).toEqual(["admin:boundary"]);
+    expect(listMvtLayerNames(tile)).toEqual(["boundary"]);
   });
 
   it("accepts gzip-compressed source tiles", async () => {
@@ -93,6 +93,31 @@ describe("mergeVectorTiles", () => {
       fetch: makeRangeFetch({ "https://tiles.example/poi/0/0/0.mvt": source })
     });
 
-    expect(listMvtLayerNames(tile)).toEqual(["poi:poi"]);
+    expect(listMvtLayerNames(tile)).toEqual(["poi"]);
+  });
+
+  it("uses getLayerName to derive layer names from source keys", async () => {
+    const getLayerName = vi.fn((key: string, layerName: string) => `${key}:${layerName}`);
+
+    const tile = await mergeVectorTiles({
+      z: 0,
+      x: 0,
+      y: 0,
+      sources: {
+        roads: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
+        water: "https://tiles.example/water/{z}/{x}/{y}.mvt"
+      },
+      fetch: makeRangeFetch({
+        "https://tiles.example/roads/0/0/0.mvt": makeMvt(["transportation"]),
+        "https://tiles.example/water/0/0/0.mvt": makeMvt(["water"])
+      }),
+      getLayerName
+    });
+
+    expect(listMvtLayerNames(tile)).toEqual(["roads:transportation", "water:water"]);
+    expect(getLayerName.mock.calls).toEqual([
+      ["roads", "transportation"],
+      ["water", "water"]
+    ]);
   });
 });

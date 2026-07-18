@@ -3,13 +3,13 @@
 [![CI](https://github.com/Kanahiro/tillefeuille/actions/workflows/ci.yml/badge.svg)](https://github.com/Kanahiro/tillefeuille/actions/workflows/ci.yml)
 [![npm version](https://img.shields.io/npm/v/tillefeuille?logo=npm&label=npm)](https://www.npmjs.com/package/tillefeuille)
 
-Merge multiple Mapbox Vector Tile (MVT) sources into a single prefixed,
-multi-layer vector tile.
+Merge multiple Mapbox Vector Tile (MVT) sources into a single multi-layer
+vector tile.
 
 `tillefeuille` is a small, pure TypeScript library for composing vector tiles at
 request time. Give it one tile coordinate and a set of source definitions, and it
-fetches each source tile, prefixes every layer name with the source id, and
-returns one merged MVT payload.
+fetches each source tile and returns one merged MVT payload. Layer names are
+preserved by default and can be customized from the source key.
 
 ```mermaid
 flowchart LR
@@ -28,7 +28,7 @@ it does not ship an HTTP server.
 ## Features
 
 - Merge multiple MVT sources into one MVT response.
-- Prefix layer names as `<source-id>:<original-layer-name>` to avoid collisions.
+- Optionally derive output layer names from each source key and original layer name.
 - Fetch tiles from HTTP(S) URL templates using `{z}`, `{x}`, and `{y}` tokens.
 - Read PMTiles v3 archives over HTTP range requests.
 - Accept gzip-compressed source tiles.
@@ -88,6 +88,7 @@ Options:
 | `fetch` | `typeof fetch` | Optional custom fetch implementation. Useful for tests and runtimes with wrapped fetch behavior. |
 | `signal` | `AbortSignal` | Optional abort signal passed to source requests. |
 | `skipMissing` | `boolean` | Whether to ignore missing source tiles. Defaults to `true`. |
+| `getLayerName` | `(key: string, layerName: string) => string` | Optional function that returns an output layer name from the source key and original name. |
 
 Missing source tiles are HTTP `404`, HTTP `204`, or absent PMTiles entries. When
 `skipMissing` is `true`, they are omitted from the merged tile. When
@@ -116,10 +117,15 @@ For PMTiles sources, the archive server must support HTTP range requests.
 
 ## Layer Naming
 
-Every output layer is renamed using the source id:
+Layer names are preserved as they appear in the source tile by default. Set
+`getLayerName` to customize them. For example, source-prefixed names can be
+created with:
 
-```text
-<source-id>:<original-layer-name>
+```ts
+const tile = await mergeVectorTiles({
+  // ...
+  getLayerName: (key, layerName) => `${key}:${layerName}`
+});
 ```
 
 For example, if the `roads` source contains a layer named `transportation`, the
@@ -129,8 +135,9 @@ merged tile contains that layer as:
 roads:transportation
 ```
 
-This keeps layer names stable and prevents collisions when different source
-tiles contain layers with the same name.
+Layers with the same output name are merged when they use the same MVT version
+and coordinate `extent`; their features and attribute dictionaries are combined.
+When those values differ, the first layer in `sources` insertion order is kept.
 
 ## Runtime Requirements
 

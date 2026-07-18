@@ -1,7 +1,7 @@
 {
   "name": "tillefeuille",
   "version": "0.1.1",
-  "description": "Merge multiple MVT sources into a prefixed multi-layer vector tile using Web-standard APIs.",
+  "description": "Merge multiple MVT sources into a multi-layer vector tile using Web-standard APIs.",
   "type": "module",
   "license": "MIT",
   "repository": {
@@ -34,7 +34,7 @@
     "build": "pnpm run clean && tsc -p tsconfig.json",
     "build:demo": "vite build --base=/tillefeuille/ --outDir=pages --emptyOutDir",
     "test": "vitest run",
-    "demo": "pnpm run build && vite --host 127.0.0.1",
+    "demo": "pnpm run build && vite demo --host 127.0.0.1",
     "prepack": "pnpm run build && pnpm test"
   },
   "keywords": [
