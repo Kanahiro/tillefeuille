@@ -33,12 +33,16 @@ interface ResolveSourceOptions {
   x: number;
   y: number;
   url: string;
-  fetch?: typeof fetch;
+  fetch: typeof fetch;
   signal?: AbortSignal;
 }
 
-const pmtilesReaders = new Map<string, PMTiles>();
-const inFlightTiles = new Map<string, InFlightTile>();
+const resourcesByFetch = new WeakMap<typeof fetch, FetchResources>();
+
+interface FetchResources {
+  pmtilesReaders: Map<string, PMTiles>;
+  inFlightTiles: Map<string, InFlightTile>;
+}
 
 interface InFlightTile {
   promise: Promise<Uint8Array | undefined>;
@@ -46,6 +50,7 @@ interface InFlightTile {
 
 export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promise<Uint8Array> {
   const skipMissing = options.skipMissing ?? true;
+  const fetchImpl = options.fetch ?? globalThis.fetch;
   const tiles: Array<{
     key: string;
     tile: Uint8Array;
@@ -64,7 +69,7 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
           x: options.x,
           y: options.y,
           url,
-          fetch: options.fetch,
+          fetch: fetchImpl,
           signal: options.signal
         })
       }))
@@ -97,7 +102,7 @@ async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Arra
   }
 
   const url = expandTileUrlTemplate(options.url, options.z, options.x, options.y);
-  const response = await (options.fetch ?? fetch)(url, { signal: options.signal });
+  const response = await options.fetch(url, { signal: options.signal });
 
   if (response.status === 404 || response.status === 204) {
     return undefined;
@@ -115,6 +120,7 @@ function fetchSourceTileSingleFlight(options: ResolveSourceOptions): Promise<Uin
   }
 
   const key = getTileRequestKey(options);
+  const inFlightTiles = getFetchResources(options.fetch).inFlightTiles;
   let inFlight = inFlightTiles.get(key);
 
   if (!inFlight) {
@@ -137,6 +143,15 @@ function getTileRequestKey(options: ResolveSourceOptions): string {
     return `${options.url}|${options.z}|${options.x}|${options.y}`;
   }
   return expandTileUrlTemplate(options.url, options.z, options.x, options.y);
+}
+
+function getFetchResources(fetchImpl: typeof fetch): FetchResources {
+  let resources = resourcesByFetch.get(fetchImpl);
+  if (!resources) {
+    resources = { pmtilesReaders: new Map(), inFlightTiles: new Map() };
+    resourcesByFetch.set(fetchImpl, resources);
+  }
+  return resources;
 }
 
 function waitForInFlightTile(
@@ -189,11 +204,12 @@ function expandTileUrlTemplate(template: string, z: number, x: number, y: number
     .replaceAll("{y}", String(y));
 }
 
-function getPMTilesReader(url: string, fetchImpl: typeof fetch | undefined): PMTiles {
-  let reader = pmtilesReaders.get(url);
+function getPMTilesReader(url: string, fetchImpl: typeof fetch): PMTiles {
+  const readers = getFetchResources(fetchImpl).pmtilesReaders;
+  let reader = readers.get(url);
   if (!reader) {
-    reader = new PMTiles(makeFetchSource(url, fetchImpl ?? globalThis.fetch), new ResolvedValueCache());
-    pmtilesReaders.set(url, reader);
+    reader = new PMTiles(makeFetchSource(url, fetchImpl), new ResolvedValueCache());
+    readers.set(url, reader);
   }
   return reader;
 }

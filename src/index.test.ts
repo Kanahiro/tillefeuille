@@ -91,6 +91,22 @@ describe("mergeVectorTiles", () => {
     expect(listMvtLayerNames(await second)).toEqual(["transportation"]);
   });
 
+  it("does not coalesce requests that use different fetch implementations", async () => {
+    const firstFetch = vi.fn(async () => new Response(makeMvt(["first"])));
+    const secondFetch = vi.fn(async () => new Response(makeMvt(["second"])));
+    const source = { roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" } };
+
+    const [first, second] = await Promise.all([
+      mergeVectorTiles({ z: 0, x: 0, y: 0, sources: source, fetch: firstFetch }),
+      mergeVectorTiles({ z: 0, x: 0, y: 0, sources: source, fetch: secondFetch })
+    ]);
+
+    expect(listMvtLayerNames(first)).toEqual(["first"]);
+    expect(listMvtLayerNames(second)).toEqual(["second"]);
+    expect(firstFetch).toHaveBeenCalledOnce();
+    expect(secondFetch).toHaveBeenCalledOnce();
+  });
+
   it("keeps a shared request alive after a caller aborts", async () => {
     let releaseFetch!: () => void;
     const fetch = vi.fn(
