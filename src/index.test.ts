@@ -172,4 +172,29 @@ describe("mergeVectorTiles", () => {
     expect(listMvtLayerNames(tile)).toEqual(["roads:place"]);
     expect(getLayerName.mock.calls).toEqual([["roads", "place"]]);
   });
+
+  it("fetches a source only within its inclusive zoom range", async () => {
+    const fetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("active")) return new Response(makeMvt(["active"]));
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof globalThis.fetch;
+
+    const tile = await mergeVectorTiles({
+      z: 5,
+      x: 0,
+      y: 0,
+      sources: {
+        below: { url: "https://tiles.example/below/{z}/{x}/{y}.mvt", maxzoom: 4 },
+        active: { url: "https://tiles.example/active/{z}/{x}/{y}.mvt", minzoom: 5, maxzoom: 5 },
+        above: { url: "https://tiles.example/above/{z}/{x}/{y}.mvt", minzoom: 6 }
+      },
+      fetch,
+      skipMissing: false
+    });
+
+    expect(listMvtLayerNames(tile)).toEqual(["active"]);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith("https://tiles.example/active/5/0/0.mvt", expect.anything());
+  });
 });

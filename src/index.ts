@@ -15,6 +15,8 @@ export interface MergeVectorTilesOptions {
 
 export interface VectorTileSource {
   url: string;
+  minzoom?: number;
+  maxzoom?: number;
   include?: readonly string[];
   exclude?: readonly string[];
 }
@@ -40,7 +42,9 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
     excludedLayerNames: ReadonlySet<string>;
   }> = [];
   const sourceTiles = await Promise.all(
-    Object.entries(options.sources).map(async ([id, { url, include, exclude = [] }]) => {
+    Object.entries(options.sources)
+      .filter(([, source]) => isSourceAvailableAtZoom(source, options.z))
+      .map(async ([id, { url, include, exclude = [] }]) => {
       return {
         id,
         includedLayerNames: include ? new Set(include) : undefined,
@@ -54,7 +58,7 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
           signal: options.signal
         })
       };
-    })
+      })
   );
 
   for (const { id, tile, includedLayerNames, excludedLayerNames } of sourceTiles) {
@@ -69,6 +73,10 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
   }
 
   return mergeMvtTiles(tiles, options.getLayerName);
+}
+
+function isSourceAvailableAtZoom(source: VectorTileSource, z: number): boolean {
+  return (source.minzoom === undefined || z >= source.minzoom) && (source.maxzoom === undefined || z <= source.maxzoom);
 }
 
 async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Array | undefined> {

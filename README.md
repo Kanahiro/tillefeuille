@@ -30,6 +30,7 @@ it does not ship an HTTP server.
 - Merge multiple MVT sources into one MVT response.
 - Optionally derive output layer names from each source key and original layer name.
 - Exclude original layer names from individual sources before merging.
+- Restrict individual sources to an inclusive tile zoom range.
 - Fetch tiles from HTTP(S) URL templates using `{z}`, `{x}`, and `{y}` tokens.
 - Read PMTiles v3 archives over HTTP range requests.
 - Accept gzip-compressed source tiles.
@@ -53,6 +54,8 @@ const tile = await mergeVectorTiles({
   sources: {
     basemap: {
       url: "https://example.com/basemap/{z}/{x}/{y}.mvt",
+      minzoom: 8,
+      maxzoom: 16,
       include: ["transportation", "water"],
       exclude: ["building"]
     },
@@ -89,7 +92,7 @@ Options:
 | `z` | `number` | Tile zoom level. |
 | `x` | `number` | Tile column. |
 | `y` | `number` | Tile row. |
-| `sources` | `Record<string, VectorTileSource>` | Source ids mapped to `{ url, include?, exclude? }` definitions. |
+| `sources` | `Record<string, VectorTileSource>` | Source ids mapped to `{ url, minzoom?, maxzoom?, include?, exclude? }` definitions. |
 | `fetch` | `typeof fetch` | Optional custom fetch implementation. Useful for tests and runtimes with wrapped fetch behavior. |
 | `signal` | `AbortSignal` | Optional abort signal passed to source requests. |
 | `skipMissing` | `boolean` | Whether to ignore missing source tiles. Defaults to `true`. |
@@ -123,6 +126,9 @@ before they are renamed and merged. If both specify a name, `exclude` wins:
   }
 }
 ```
+
+`minzoom` and `maxzoom` limit a source to that inclusive zoom range. A source
+outside its range is not fetched.
 
 For PMTiles sources, the archive server must support HTTP range requests.
 
