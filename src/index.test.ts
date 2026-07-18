@@ -64,6 +64,80 @@ describe("mergeVectorTiles", () => {
     expect(listMvtLayerNames(await merging)).toEqual(["transportation", "water"]);
   });
 
+  it("coalesces concurrent requests for the same HTTP tile", async () => {
+    let releaseFetch!: () => void;
+    const fetchStarted = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+    const fetch = vi.fn(async () => {
+      await fetchStarted;
+      return new Response(makeMvt(["transportation"]));
+    }) as typeof globalThis.fetch;
+    const options = {
+      z: 0,
+      x: 0,
+      y: 0,
+      sources: { roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" } },
+      fetch
+    };
+
+    const first = mergeVectorTiles(options);
+    const second = mergeVectorTiles(options);
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    releaseFetch();
+
+    expect(listMvtLayerNames(await first)).toEqual(["transportation"]);
+    expect(listMvtLayerNames(await second)).toEqual(["transportation"]);
+  });
+
+  it("does not coalesce requests that use different fetch implementations", async () => {
+    const firstFetch = vi.fn(async () => new Response(makeMvt(["first"])));
+    const secondFetch = vi.fn(async () => new Response(makeMvt(["second"])));
+    const source = { roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" } };
+
+    const [first, second] = await Promise.all([
+      mergeVectorTiles({ z: 0, x: 0, y: 0, sources: source, fetch: firstFetch }),
+      mergeVectorTiles({ z: 0, x: 0, y: 0, sources: source, fetch: secondFetch })
+    ]);
+
+    expect(listMvtLayerNames(first)).toEqual(["first"]);
+    expect(listMvtLayerNames(second)).toEqual(["second"]);
+    expect(firstFetch).toHaveBeenCalledOnce();
+    expect(secondFetch).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a shared request alive after a caller aborts", async () => {
+    let releaseFetch!: () => void;
+    const fetch = vi.fn(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseFetch = () => resolve(new Response(makeMvt(["transportation"])));
+        })
+    ) as typeof globalThis.fetch;
+    const firstController = new AbortController();
+    const options = {
+      z: 0,
+      x: 0,
+      y: 0,
+      sources: { roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" } },
+      fetch
+    };
+
+    const first = mergeVectorTiles({ ...options, signal: firstController.signal });
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    const reason = new Error("first caller aborted");
+    const firstRejected = expect(first).rejects.toBe(reason);
+    firstController.abort(reason);
+    await firstRejected;
+    const second = mergeVectorTiles(options);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    releaseFetch();
+
+    expect(listMvtLayerNames(await second)).toEqual(["transportation"]);
+  });
+
   it("reads PMTiles archives through range requests", async () => {
     const archive = makePMTilesArchive(3, 4, 2, makeMvt(["boundary"]));
 
@@ -78,6 +152,24 @@ describe("mergeVectorTiles", () => {
     });
 
     expect(listMvtLayerNames(tile)).toEqual(["boundary"]);
+  });
+
+  it("coalesces concurrent requests for the same PMTiles tile", async () => {
+    const archive = makePMTilesArchive(3, 4, 2, makeMvt(["boundary"]));
+    const fetch = vi.fn(makeRangeFetch({ "https://tiles.example/coalesced.pmtiles": archive }));
+    const options = {
+      z: 3,
+      x: 4,
+      y: 2,
+      sources: { admin: { url: "pmtiles://https://tiles.example/coalesced.pmtiles" } },
+      fetch
+    };
+
+    const [first, second] = await Promise.all([mergeVectorTiles(options), mergeVectorTiles(options)]);
+
+    expect(listMvtLayerNames(first)).toEqual(["boundary"]);
+    expect(listMvtLayerNames(second)).toEqual(["boundary"]);
+    expect(fetch).toHaveBeenCalledTimes(2);
   });
 
   it("accepts gzip-compressed source tiles", async () => {
