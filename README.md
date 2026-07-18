@@ -138,6 +138,10 @@ outside its range is not fetched.
 
 For PMTiles sources, the archive server must support HTTP range requests.
 
+Concurrent requests for the same source URL and tile coordinate share one
+in-flight fetch. Aborting one caller does not cancel the shared fetch while
+another caller is still waiting for it.
+
 ## Layer Naming
 
 Layer names are preserved as they appear in the source tile by default. Set

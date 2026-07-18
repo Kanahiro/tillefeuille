@@ -39,6 +39,15 @@ interface ResolveSourceOptions {
 
 const defaultPMTilesReaders = new Map<string, PMTiles>();
 const customPMTilesReaders = new WeakMap<typeof fetch, Map<string, PMTiles>>();
+const defaultInFlightTiles = new Map<string, InFlightTile>();
+const customInFlightTiles = new WeakMap<typeof fetch, Map<string, InFlightTile>>();
+
+interface InFlightTile {
+  controller: AbortController;
+  promise: Promise<Uint8Array | undefined>;
+  subscribers: number;
+  settled: boolean;
+}
 
 export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promise<Uint8Array> {
   const skipMissing = options.skipMissing ?? true;
@@ -51,12 +60,11 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
   const sourceTiles = await Promise.all(
     Object.entries(options.sources)
       .filter(([, source]) => isSourceAvailableAtZoom(source, options.z))
-      .map(async ([id, { url, layers }]) => {
-      return {
+      .map(async ([id, { url, layers }]) => ({
         id,
         includedLayerNames: layers?.include ? new Set(layers.include) : undefined,
         excludedLayerNames: new Set(layers?.exclude),
-        tile: await fetchSourceTile({
+        tile: await fetchSourceTileSingleFlight({
           z: options.z,
           x: options.x,
           y: options.y,
@@ -64,8 +72,7 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
           fetch: options.fetch,
           signal: options.signal
         })
-      };
-      })
+      }))
   );
 
   for (const { id, tile, includedLayerNames, excludedLayerNames } of sourceTiles) {
@@ -105,6 +112,93 @@ async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Arra
   }
 
   return decompressIfGzip(new Uint8Array(await response.arrayBuffer()));
+}
+
+function fetchSourceTileSingleFlight(options: ResolveSourceOptions): Promise<Uint8Array | undefined> {
+  if (options.signal?.aborted) {
+    return Promise.reject(options.signal.reason ?? new DOMException("The operation was aborted", "AbortError"));
+  }
+
+  const key = getTileRequestKey(options);
+  const inFlightTiles = getInFlightTiles(options.fetch);
+  let inFlight = inFlightTiles.get(key);
+
+  if (!inFlight) {
+    const controller = new AbortController();
+    inFlight = {
+      controller,
+      subscribers: 0,
+      settled: false,
+      promise: Promise.resolve(undefined)
+    };
+    inFlight.promise = fetchSourceTile({ ...options, signal: controller.signal }).finally(() => {
+      inFlight!.settled = true;
+      if (inFlightTiles.get(key) === inFlight) {
+        inFlightTiles.delete(key);
+      }
+    });
+    inFlightTiles.set(key, inFlight);
+  }
+
+  return subscribeToInFlightTile(inFlight, options.signal);
+}
+
+function getTileRequestKey(options: ResolveSourceOptions): string {
+  if (options.url.startsWith("pmtiles://")) {
+    return `${options.url}|${options.z}|${options.x}|${options.y}`;
+  }
+  return expandTileUrlTemplate(options.url, options.z, options.x, options.y);
+}
+
+function getInFlightTiles(fetchImpl: typeof fetch | undefined): Map<string, InFlightTile> {
+  if (!fetchImpl) {
+    return defaultInFlightTiles;
+  }
+
+  let inFlightTiles = customInFlightTiles.get(fetchImpl);
+  if (!inFlightTiles) {
+    inFlightTiles = new Map();
+    customInFlightTiles.set(fetchImpl, inFlightTiles);
+  }
+  return inFlightTiles;
+}
+
+function subscribeToInFlightTile(inFlight: InFlightTile, signal: AbortSignal | undefined): Promise<Uint8Array | undefined> {
+  inFlight.subscribers += 1;
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    const release = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      signal?.removeEventListener("abort", abort);
+      inFlight.subscribers -= 1;
+      if (!inFlight.settled && inFlight.subscribers === 0) {
+        inFlight.controller.abort();
+      }
+    };
+    const abort = () => {
+      release();
+      reject(signal?.reason ?? new DOMException("The operation was aborted", "AbortError"));
+    };
+
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    inFlight.promise.then(
+      (tile) => {
+        release();
+        resolve(tile);
+      },
+      (error) => {
+        release();
+        reject(error);
+      }
+    );
+  });
 }
 
 function expandTileUrlTemplate(template: string, z: number, x: number, y: number): string {
