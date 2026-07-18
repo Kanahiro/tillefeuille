@@ -6,11 +6,16 @@ export interface MergeVectorTilesOptions {
   z: number;
   x: number;
   y: number;
-  sources: Record<string, string>;
+  sources: Record<string, VectorTileSource>;
   fetch?: typeof fetch;
   signal?: AbortSignal;
   skipMissing?: boolean;
   getLayerName?: (key: string, layerName: string) => string;
+}
+
+export interface VectorTileSource {
+  url: string;
+  exclude?: readonly string[];
 }
 
 interface ResolveSourceOptions {
@@ -27,22 +32,25 @@ const customPMTilesReaders = new WeakMap<typeof fetch, Map<string, PMTiles>>();
 
 export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promise<Uint8Array> {
   const skipMissing = options.skipMissing ?? true;
-  const tiles: Array<{ key: string; tile: Uint8Array }> = [];
+  const tiles: Array<{ key: string; tile: Uint8Array; excludedLayerNames: ReadonlySet<string> }> = [];
   const sourceTiles = await Promise.all(
-    Object.entries(options.sources).map(async ([id, url]) => ({
-      id,
-      tile: await fetchSourceTile({
-        z: options.z,
-        x: options.x,
-        y: options.y,
-        url,
-        fetch: options.fetch,
-        signal: options.signal
-      })
-    }))
+    Object.entries(options.sources).map(async ([id, { url, exclude = [] }]) => {
+      return {
+        id,
+        excludedLayerNames: new Set(exclude),
+        tile: await fetchSourceTile({
+          z: options.z,
+          x: options.x,
+          y: options.y,
+          url,
+          fetch: options.fetch,
+          signal: options.signal
+        })
+      };
+    })
   );
 
-  for (const { id, tile } of sourceTiles) {
+  for (const { id, tile, excludedLayerNames } of sourceTiles) {
     if (!tile) {
       if (skipMissing) {
         continue;
@@ -50,7 +58,7 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
       throw new Error(`Source tile not found: ${id}`);
     }
 
-    tiles.push({ key: id, tile });
+    tiles.push({ key: id, tile, excludedLayerNames });
   }
 
   return mergeMvtTiles(tiles, options.getLayerName);

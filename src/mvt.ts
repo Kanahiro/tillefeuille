@@ -12,13 +12,16 @@ const LAYER_VALUES_FIELD = 4;
 const LAYER_EXTENT_FIELD = 5;
 const LAYER_VERSION_FIELD = 15;
 const FEATURE_TAGS_FIELD = 2;
+const NO_EXCLUDED_LAYER_NAMES = new Set<string>();
 
 interface MvtTile {
   key: string;
   tile: Uint8Array;
+  excludedLayerNames?: ReadonlySet<string>;
 }
 
 interface ParsedLayer {
+  excluded?: boolean;
   name?: string;
   extent?: number;
   version?: number;
@@ -50,7 +53,7 @@ export function mergeMvtTiles(
   const groupsByName = new Map<string, LayerGroup>();
   const tileFields: Uint8Array[] = [];
 
-  for (const { key: sourceKey, tile } of tiles) {
+  for (const { key: sourceKey, tile, excludedLayerNames = NO_EXCLUDED_LAYER_NAMES } of tiles) {
     const cursor: Cursor = { bytes: tile, offset: 0 };
 
     while (cursor.offset < tile.length) {
@@ -65,7 +68,10 @@ export function mergeMvtTiles(
         continue;
       }
 
-      const layer = parseLayer(readBytes(cursor, readVarint(cursor)), sourceKey, getLayerName);
+      const layer = parseLayer(readBytes(cursor, readVarint(cursor)), sourceKey, getLayerName, excludedLayerNames);
+      if (layer.excluded) {
+        continue;
+      }
       if (layer.name === undefined) {
         groups.push(createLayerGroup(layer));
         continue;
@@ -93,7 +99,8 @@ export function mergeMvtTiles(
 function parseLayer(
   bytes: Uint8Array,
   sourceKey: string,
-  getLayerName: (key: string, layerName: string) => string
+  getLayerName: (key: string, layerName: string) => string,
+  excludedLayerNames: ReadonlySet<string>
 ): ParsedLayer {
   const cursor: Cursor = { bytes, offset: 0 };
   const layer: ParsedLayer = { keys: [], values: [], features: [], unknownFields: [] };
@@ -107,6 +114,9 @@ function parseLayer(
     if (fieldNumber === LAYER_NAME_FIELD && wireType === WIRE_LENGTH_DELIMITED) {
       const name = decodeString(readBytes(cursor, readVarint(cursor)));
       if (layer.name === undefined) {
+        if (excludedLayerNames.has(name)) {
+          return { ...layer, excluded: true };
+        }
         layer.name = getLayerName(sourceKey, name);
       }
       continue;

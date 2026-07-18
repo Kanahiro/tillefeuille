@@ -24,8 +24,8 @@ describe("mergeVectorTiles", () => {
       x: 1,
       y: 2,
       sources: {
-        roads: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
-        water: "https://tiles.example/water/{z}/{x}/{y}.mvt"
+        roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" },
+        water: { url: "https://tiles.example/water/{z}/{x}/{y}.mvt" }
       },
       fetch: makeRangeFetch(files)
     });
@@ -52,8 +52,8 @@ describe("mergeVectorTiles", () => {
       x: 0,
       y: 0,
       sources: {
-        roads: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
-        water: "https://tiles.example/water/{z}/{x}/{y}.mvt"
+        roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" },
+        water: { url: "https://tiles.example/water/{z}/{x}/{y}.mvt" }
       },
       fetch
     });
@@ -72,7 +72,7 @@ describe("mergeVectorTiles", () => {
       x: 4,
       y: 2,
       sources: {
-        admin: "pmtiles://https://tiles.example/admin.pmtiles"
+        admin: { url: "pmtiles://https://tiles.example/admin.pmtiles" }
       },
       fetch: makeRangeFetch({ "https://tiles.example/admin.pmtiles": archive })
     });
@@ -88,7 +88,7 @@ describe("mergeVectorTiles", () => {
       x: 0,
       y: 0,
       sources: {
-        poi: "https://tiles.example/poi/{z}/{x}/{y}.mvt"
+        poi: { url: "https://tiles.example/poi/{z}/{x}/{y}.mvt" }
       },
       fetch: makeRangeFetch({ "https://tiles.example/poi/0/0/0.mvt": source })
     });
@@ -104,8 +104,8 @@ describe("mergeVectorTiles", () => {
       x: 0,
       y: 0,
       sources: {
-        roads: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
-        water: "https://tiles.example/water/{z}/{x}/{y}.mvt"
+        roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" },
+        water: { url: "https://tiles.example/water/{z}/{x}/{y}.mvt" }
       },
       fetch: makeRangeFetch({
         "https://tiles.example/roads/0/0/0.mvt": makeMvt(["transportation"]),
@@ -117,6 +117,34 @@ describe("mergeVectorTiles", () => {
     expect(listMvtLayerNames(tile)).toEqual(["roads:transportation", "water:water"]);
     expect(getLayerName.mock.calls).toEqual([
       ["roads", "transportation"],
+      ["water", "water"]
+    ]);
+  });
+
+  it("excludes original layer names from an individual source", async () => {
+    const getLayerName = vi.fn((key: string, layerName: string) => `${key}:${layerName}`);
+
+    const tile = await mergeVectorTiles({
+      z: 0,
+      x: 0,
+      y: 0,
+      sources: {
+        roads: {
+          url: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
+          exclude: ["transportation"]
+        },
+        water: { url: "https://tiles.example/water/{z}/{x}/{y}.mvt" }
+      },
+      fetch: makeRangeFetch({
+        "https://tiles.example/roads/0/0/0.mvt": makeMvt(["transportation", "place"]),
+        "https://tiles.example/water/0/0/0.mvt": makeMvt(["water"])
+      }),
+      getLayerName
+    });
+
+    expect(listMvtLayerNames(tile)).toEqual(["roads:place", "water:water"]);
+    expect(getLayerName.mock.calls).toEqual([
+      ["roads", "place"],
       ["water", "water"]
     ]);
   });

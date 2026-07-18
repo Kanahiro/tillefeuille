@@ -29,6 +29,7 @@ it does not ship an HTTP server.
 
 - Merge multiple MVT sources into one MVT response.
 - Optionally derive output layer names from each source key and original layer name.
+- Exclude original layer names from individual sources before merging.
 - Fetch tiles from HTTP(S) URL templates using `{z}`, `{x}`, and `{y}` tokens.
 - Read PMTiles v3 archives over HTTP range requests.
 - Accept gzip-compressed source tiles.
@@ -50,10 +51,13 @@ const tile = await mergeVectorTiles({
   x: 14553,
   y: 6451,
   sources: {
-    basemap: "https://example.com/basemap/{z}/{x}/{y}.mvt",
-    roads: "https://example.com/roads/{z}/{x}/{y}.mvt",
-    poi: "https://example.com/poi/{z}/{x}/{y}.mvt",
-    admin: "pmtiles://https://example.com/admin.pmtiles"
+    basemap: {
+      url: "https://example.com/basemap/{z}/{x}/{y}.mvt",
+      exclude: ["building"]
+    },
+    roads: { url: "https://example.com/roads/{z}/{x}/{y}.mvt" },
+    poi: { url: "https://example.com/poi/{z}/{x}/{y}.mvt" },
+    admin: { url: "pmtiles://https://example.com/admin.pmtiles" }
   }
 });
 
@@ -84,7 +88,7 @@ Options:
 | `z` | `number` | Tile zoom level. |
 | `x` | `number` | Tile column. |
 | `y` | `number` | Tile row. |
-| `sources` | `Record<string, string>` | Source ids mapped to HTTP tile URL templates or PMTiles archive URLs. |
+| `sources` | `Record<string, VectorTileSource>` | Source ids mapped to `{ url, exclude? }` definitions. |
 | `fetch` | `typeof fetch` | Optional custom fetch implementation. Useful for tests and runtimes with wrapped fetch behavior. |
 | `signal` | `AbortSignal` | Optional abort signal passed to source requests. |
 | `skipMissing` | `boolean` | Whether to ignore missing source tiles. Defaults to `true`. |
@@ -96,20 +100,24 @@ Missing source tiles are HTTP `404`, HTTP `204`, or absent PMTiles entries. When
 
 ## Source URLs
 
-HTTP sources must start with `http://` or `https://` and include all three tile
-coordinate tokens:
+Each source has a `url`. HTTP URLs must start with `http://` or `https://` and
+include all three tile coordinate tokens:
 
 ```ts
 {
-  roads: "https://tiles.example.com/roads/{z}/{x}/{y}.mvt"
+  roads: { url: "https://tiles.example.com/roads/{z}/{x}/{y}.mvt" }
 }
 ```
 
-PMTiles sources use the `pmtiles://` prefix followed by the archive URL:
+PMTiles sources use the `pmtiles://` prefix followed by the archive URL. Use
+`exclude` to remove original layer names before they are renamed and merged:
 
 ```ts
 {
-  admin: "pmtiles://https://tiles.example.com/admin.pmtiles"
+  admin: {
+    url: "pmtiles://https://tiles.example.com/admin.pmtiles",
+    exclude: ["building", "poi"]
+  }
 }
 ```
 
