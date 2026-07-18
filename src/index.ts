@@ -33,24 +33,15 @@ interface ResolveSourceOptions {
   x: number;
   y: number;
   url: string;
-  fetch: typeof fetch;
+  fetch?: typeof fetch;
   signal?: AbortSignal;
 }
 
-const resourcesByFetch = new WeakMap<typeof fetch, FetchResources>();
-
-interface FetchResources {
-  pmtilesReaders: Map<string, PMTiles>;
-  inFlightTiles: Map<string, InFlightTile>;
-}
-
-interface InFlightTile {
-  promise: Promise<Uint8Array | undefined>;
-}
+const defaultPMTilesReaders = new Map<string, PMTiles>();
+const customPMTilesReaders = new WeakMap<typeof fetch, Map<string, PMTiles>>();
 
 export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promise<Uint8Array> {
   const skipMissing = options.skipMissing ?? true;
-  const fetchImpl = options.fetch ?? globalThis.fetch;
   const tiles: Array<{
     key: string;
     tile: Uint8Array;
@@ -60,19 +51,21 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
   const sourceTiles = await Promise.all(
     Object.entries(options.sources)
       .filter(([, source]) => isSourceAvailableAtZoom(source, options.z))
-      .map(async ([id, { url, layers }]) => ({
+      .map(async ([id, { url, layers }]) => {
+      return {
         id,
         includedLayerNames: layers?.include ? new Set(layers.include) : undefined,
         excludedLayerNames: new Set(layers?.exclude),
-        tile: await fetchSourceTileSingleFlight({
+        tile: await fetchSourceTile({
           z: options.z,
           x: options.x,
           y: options.y,
           url,
-          fetch: fetchImpl,
+          fetch: options.fetch,
           signal: options.signal
         })
-      }))
+      };
+      })
   );
 
   for (const { id, tile, includedLayerNames, excludedLayerNames } of sourceTiles) {
@@ -102,7 +95,7 @@ async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Arra
   }
 
   const url = expandTileUrlTemplate(options.url, options.z, options.x, options.y);
-  const response = await options.fetch(url, { signal: options.signal });
+  const response = await (options.fetch ?? fetch)(url, { signal: options.signal });
 
   if (response.status === 404 || response.status === 204) {
     return undefined;
@@ -112,79 +105,6 @@ async function fetchSourceTile(options: ResolveSourceOptions): Promise<Uint8Arra
   }
 
   return decompressIfGzip(new Uint8Array(await response.arrayBuffer()));
-}
-
-function fetchSourceTileSingleFlight(options: ResolveSourceOptions): Promise<Uint8Array | undefined> {
-  if (options.signal?.aborted) {
-    return Promise.reject(options.signal.reason ?? new DOMException("The operation was aborted", "AbortError"));
-  }
-
-  const key = getTileRequestKey(options);
-  const inFlightTiles = getFetchResources(options.fetch).inFlightTiles;
-  let inFlight = inFlightTiles.get(key);
-
-  if (!inFlight) {
-    inFlight = {
-      promise: Promise.resolve(undefined)
-    };
-    inFlight.promise = fetchSourceTile({ ...options, signal: undefined }).finally(() => {
-      if (inFlightTiles.get(key) === inFlight) {
-        inFlightTiles.delete(key);
-      }
-    });
-    inFlightTiles.set(key, inFlight);
-  }
-
-  return waitForInFlightTile(inFlight.promise, options.signal);
-}
-
-function getTileRequestKey(options: ResolveSourceOptions): string {
-  if (options.url.startsWith("pmtiles://")) {
-    return `${options.url}|${options.z}|${options.x}|${options.y}`;
-  }
-  return expandTileUrlTemplate(options.url, options.z, options.x, options.y);
-}
-
-function getFetchResources(fetchImpl: typeof fetch): FetchResources {
-  let resources = resourcesByFetch.get(fetchImpl);
-  if (!resources) {
-    resources = { pmtilesReaders: new Map(), inFlightTiles: new Map() };
-    resourcesByFetch.set(fetchImpl, resources);
-  }
-  return resources;
-}
-
-function waitForInFlightTile(
-  promise: Promise<Uint8Array | undefined>,
-  signal: AbortSignal | undefined
-): Promise<Uint8Array | undefined> {
-  if (!signal) {
-    return promise;
-  }
-  if (signal.aborted) {
-    return Promise.reject(signal.reason ?? new DOMException("The operation was aborted", "AbortError"));
-}
-  return new Promise((resolve, reject) => {
-    const finish = () => {
-      signal?.removeEventListener("abort", abort);
-    };
-    const abort = () => {
-      finish();
-      reject(signal?.reason ?? new DOMException("The operation was aborted", "AbortError"));
-    };
-
-    signal?.addEventListener("abort", abort, { once: true });
-    promise.then(
-      (tile) => {
-        finish();
-        resolve(tile);
-      },
-      (error) => {
-        finish();
-        reject(error);
-      }
-    );
-  });
 }
 
 function expandTileUrlTemplate(template: string, z: number, x: number, y: number): string {
@@ -204,8 +124,22 @@ function expandTileUrlTemplate(template: string, z: number, x: number, y: number
     .replaceAll("{y}", String(y));
 }
 
-function getPMTilesReader(url: string, fetchImpl: typeof fetch): PMTiles {
-  const readers = getFetchResources(fetchImpl).pmtilesReaders;
+function getPMTilesReader(url: string, fetchImpl: typeof fetch | undefined): PMTiles {
+  if (!fetchImpl) {
+    let reader = defaultPMTilesReaders.get(url);
+    if (!reader) {
+      reader = new PMTiles(url, new ResolvedValueCache());
+      defaultPMTilesReaders.set(url, reader);
+    }
+    return reader;
+  }
+
+  let readers = customPMTilesReaders.get(fetchImpl);
+  if (!readers) {
+    readers = new Map();
+    customPMTilesReaders.set(fetchImpl, readers);
+  }
+
   let reader = readers.get(url);
   if (!reader) {
     reader = new PMTiles(makeFetchSource(url, fetchImpl), new ResolvedValueCache());
