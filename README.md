@@ -53,6 +53,7 @@ const tile = await mergeVectorTiles({
   sources: {
     basemap: {
       url: "https://example.com/basemap/{z}/{x}/{y}.mvt",
+      include: ["transportation", "water"],
       exclude: ["building"]
     },
     roads: { url: "https://example.com/roads/{z}/{x}/{y}.mvt" },
@@ -88,7 +89,7 @@ Options:
 | `z` | `number` | Tile zoom level. |
 | `x` | `number` | Tile column. |
 | `y` | `number` | Tile row. |
-| `sources` | `Record<string, VectorTileSource>` | Source ids mapped to `{ url, exclude? }` definitions. |
+| `sources` | `Record<string, VectorTileSource>` | Source ids mapped to `{ url, include?, exclude? }` definitions. |
 | `fetch` | `typeof fetch` | Optional custom fetch implementation. Useful for tests and runtimes with wrapped fetch behavior. |
 | `signal` | `AbortSignal` | Optional abort signal passed to source requests. |
 | `skipMissing` | `boolean` | Whether to ignore missing source tiles. Defaults to `true`. |
@@ -110,12 +111,14 @@ include all three tile coordinate tokens:
 ```
 
 PMTiles sources use the `pmtiles://` prefix followed by the archive URL. Use
-`exclude` to remove original layer names before they are renamed and merged:
+`include` to retain selected original layer names, and `exclude` to remove them,
+before they are renamed and merged. If both specify a name, `exclude` wins:
 
 ```ts
 {
   admin: {
     url: "pmtiles://https://tiles.example.com/admin.pmtiles",
+    include: ["boundary", "building", "poi"],
     exclude: ["building", "poi"]
   }
 }

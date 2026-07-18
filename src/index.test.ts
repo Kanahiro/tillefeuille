@@ -148,4 +148,28 @@ describe("mergeVectorTiles", () => {
       ["water", "water"]
     ]);
   });
+
+  it("includes only selected original layer names and lets exclude take precedence", async () => {
+    const getLayerName = vi.fn((key: string, layerName: string) => `${key}:${layerName}`);
+
+    const tile = await mergeVectorTiles({
+      z: 0,
+      x: 0,
+      y: 0,
+      sources: {
+        roads: {
+          url: "https://tiles.example/roads/{z}/{x}/{y}.mvt",
+          include: ["transportation", "place"],
+          exclude: ["transportation"]
+        }
+      },
+      fetch: makeRangeFetch({
+        "https://tiles.example/roads/0/0/0.mvt": makeMvt(["transportation", "place", "building"])
+      }),
+      getLayerName
+    });
+
+    expect(listMvtLayerNames(tile)).toEqual(["roads:place"]);
+    expect(getLayerName.mock.calls).toEqual([["roads", "place"]]);
+  });
 });

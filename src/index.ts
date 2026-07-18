@@ -15,6 +15,7 @@ export interface MergeVectorTilesOptions {
 
 export interface VectorTileSource {
   url: string;
+  include?: readonly string[];
   exclude?: readonly string[];
 }
 
@@ -32,11 +33,17 @@ const customPMTilesReaders = new WeakMap<typeof fetch, Map<string, PMTiles>>();
 
 export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promise<Uint8Array> {
   const skipMissing = options.skipMissing ?? true;
-  const tiles: Array<{ key: string; tile: Uint8Array; excludedLayerNames: ReadonlySet<string> }> = [];
+  const tiles: Array<{
+    key: string;
+    tile: Uint8Array;
+    includedLayerNames?: ReadonlySet<string>;
+    excludedLayerNames: ReadonlySet<string>;
+  }> = [];
   const sourceTiles = await Promise.all(
-    Object.entries(options.sources).map(async ([id, { url, exclude = [] }]) => {
+    Object.entries(options.sources).map(async ([id, { url, include, exclude = [] }]) => {
       return {
         id,
+        includedLayerNames: include ? new Set(include) : undefined,
         excludedLayerNames: new Set(exclude),
         tile: await fetchSourceTile({
           z: options.z,
@@ -50,7 +57,7 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
     })
   );
 
-  for (const { id, tile, excludedLayerNames } of sourceTiles) {
+  for (const { id, tile, includedLayerNames, excludedLayerNames } of sourceTiles) {
     if (!tile) {
       if (skipMissing) {
         continue;
@@ -58,7 +65,7 @@ export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promis
       throw new Error(`Source tile not found: ${id}`);
     }
 
-    tiles.push({ key: id, tile, excludedLayerNames });
+    tiles.push({ key: id, tile, includedLayerNames, excludedLayerNames });
   }
 
   return mergeMvtTiles(tiles, options.getLayerName);
