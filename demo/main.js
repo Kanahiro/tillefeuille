@@ -49,7 +49,8 @@ function installProtocol() {
       y,
       sources,
       fetch,
-      signal: abortController.signal
+      signal: abortController.signal,
+      logger: console
     });
 
     ensureInspectLayers(listMvtLayers(tile));
