@@ -64,7 +64,7 @@ function createMap() {
     container: "map",
     center: [139.76, 35.68],
     zoom: 12,
-    maxZoom: 16,
+    hash: true,
     style: makeStyle(),
     attributionControl: false
   });
