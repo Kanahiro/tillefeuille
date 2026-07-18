@@ -77,7 +77,7 @@ describe("mergeVectorTiles", () => {
       z: 0,
       x: 0,
       y: 0,
-      sources: { roads: "https://tiles.example/roads/{z}/{x}/{y}.mvt" },
+      sources: { roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" } },
       fetch
     };
 
@@ -87,8 +87,8 @@ describe("mergeVectorTiles", () => {
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     releaseFetch();
 
-    expect(listMvtLayerNames(await first)).toEqual(["roads:transportation"]);
-    expect(listMvtLayerNames(await second)).toEqual(["roads:transportation"]);
+    expect(listMvtLayerNames(await first)).toEqual(["transportation"]);
+    expect(listMvtLayerNames(await second)).toEqual(["transportation"]);
   });
 
   it("keeps a shared request alive after a caller aborts", async () => {
@@ -104,7 +104,7 @@ describe("mergeVectorTiles", () => {
       z: 0,
       x: 0,
       y: 0,
-      sources: { roads: "https://tiles.example/roads/{z}/{x}/{y}.mvt" },
+      sources: { roads: { url: "https://tiles.example/roads/{z}/{x}/{y}.mvt" } },
       fetch
     };
 
@@ -119,7 +119,7 @@ describe("mergeVectorTiles", () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     releaseFetch();
 
-    expect(listMvtLayerNames(await second)).toEqual(["roads:transportation"]);
+    expect(listMvtLayerNames(await second)).toEqual(["transportation"]);
   });
 
   it("reads PMTiles archives through range requests", async () => {
@@ -140,19 +140,19 @@ describe("mergeVectorTiles", () => {
 
   it("coalesces concurrent requests for the same PMTiles tile", async () => {
     const archive = makePMTilesArchive(3, 4, 2, makeMvt(["boundary"]));
-    const fetch = vi.fn(makeRangeFetch({ "https://tiles.example/admin.pmtiles": archive }));
+    const fetch = vi.fn(makeRangeFetch({ "https://tiles.example/coalesced.pmtiles": archive }));
     const options = {
       z: 3,
       x: 4,
       y: 2,
-      sources: { admin: "pmtiles://https://tiles.example/admin.pmtiles" },
+      sources: { admin: { url: "pmtiles://https://tiles.example/coalesced.pmtiles" } },
       fetch
     };
 
     const [first, second] = await Promise.all([mergeVectorTiles(options), mergeVectorTiles(options)]);
 
-    expect(listMvtLayerNames(first)).toEqual(["admin:boundary"]);
-    expect(listMvtLayerNames(second)).toEqual(["admin:boundary"]);
+    expect(listMvtLayerNames(first)).toEqual(["boundary"]);
+    expect(listMvtLayerNames(second)).toEqual(["boundary"]);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
