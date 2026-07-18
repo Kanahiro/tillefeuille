@@ -139,8 +139,8 @@ outside its range is not fetched.
 For PMTiles sources, the archive server must support HTTP range requests.
 
 Concurrent requests for the same source URL and tile coordinate share one
-in-flight fetch. Aborting one caller does not cancel the shared fetch while
-another caller is still waiting for it.
+in-flight fetch. A caller can stop waiting with its abort signal without
+cancelling the shared fetch.
 
 ## Layer Naming
 

@@ -91,17 +91,15 @@ describe("mergeVectorTiles", () => {
     expect(listMvtLayerNames(await second)).toEqual(["roads:transportation"]);
   });
 
-  it("keeps a shared request alive when one caller aborts", async () => {
+  it("keeps a shared request alive after a caller aborts", async () => {
     let releaseFetch!: () => void;
     const fetch = vi.fn(
-      (_input: RequestInfo | URL, init?: RequestInit) =>
-        new Promise<Response>((resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+      () =>
+        new Promise<Response>((resolve) => {
           releaseFetch = () => resolve(new Response(makeMvt(["transportation"])));
         })
     ) as typeof globalThis.fetch;
     const firstController = new AbortController();
-    const secondController = new AbortController();
     const options = {
       z: 0,
       x: 0,
@@ -111,13 +109,14 @@ describe("mergeVectorTiles", () => {
     };
 
     const first = mergeVectorTiles({ ...options, signal: firstController.signal });
-    const second = mergeVectorTiles({ ...options, signal: secondController.signal });
 
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
     const reason = new Error("first caller aborted");
     const firstRejected = expect(first).rejects.toBe(reason);
     firstController.abort(reason);
     await firstRejected;
+    const second = mergeVectorTiles(options);
+    expect(fetch).toHaveBeenCalledTimes(1);
     releaseFetch();
 
     expect(listMvtLayerNames(await second)).toEqual(["roads:transportation"]);

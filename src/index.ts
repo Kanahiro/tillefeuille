@@ -37,16 +37,11 @@ interface ResolveSourceOptions {
   signal?: AbortSignal;
 }
 
-const defaultPMTilesReaders = new Map<string, PMTiles>();
-const customPMTilesReaders = new WeakMap<typeof fetch, Map<string, PMTiles>>();
-const defaultInFlightTiles = new Map<string, InFlightTile>();
-const customInFlightTiles = new WeakMap<typeof fetch, Map<string, InFlightTile>>();
+const pmtilesReaders = new Map<string, PMTiles>();
+const inFlightTiles = new Map<string, InFlightTile>();
 
 interface InFlightTile {
-  controller: AbortController;
   promise: Promise<Uint8Array | undefined>;
-  subscribers: number;
-  settled: boolean;
 }
 
 export async function mergeVectorTiles(options: MergeVectorTilesOptions): Promise<Uint8Array> {
@@ -120,19 +115,13 @@ function fetchSourceTileSingleFlight(options: ResolveSourceOptions): Promise<Uin
   }
 
   const key = getTileRequestKey(options);
-  const inFlightTiles = getInFlightTiles(options.fetch);
   let inFlight = inFlightTiles.get(key);
 
   if (!inFlight) {
-    const controller = new AbortController();
     inFlight = {
-      controller,
-      subscribers: 0,
-      settled: false,
       promise: Promise.resolve(undefined)
     };
-    inFlight.promise = fetchSourceTile({ ...options, signal: controller.signal }).finally(() => {
-      inFlight!.settled = true;
+    inFlight.promise = fetchSourceTile({ ...options, signal: undefined }).finally(() => {
       if (inFlightTiles.get(key) === inFlight) {
         inFlightTiles.delete(key);
       }
@@ -140,7 +129,7 @@ function fetchSourceTileSingleFlight(options: ResolveSourceOptions): Promise<Uin
     inFlightTiles.set(key, inFlight);
   }
 
-  return subscribeToInFlightTile(inFlight, options.signal);
+  return waitForInFlightTile(inFlight.promise, options.signal);
 }
 
 function getTileRequestKey(options: ResolveSourceOptions): string {
@@ -150,51 +139,33 @@ function getTileRequestKey(options: ResolveSourceOptions): string {
   return expandTileUrlTemplate(options.url, options.z, options.x, options.y);
 }
 
-function getInFlightTiles(fetchImpl: typeof fetch | undefined): Map<string, InFlightTile> {
-  if (!fetchImpl) {
-    return defaultInFlightTiles;
+function waitForInFlightTile(
+  promise: Promise<Uint8Array | undefined>,
+  signal: AbortSignal | undefined
+): Promise<Uint8Array | undefined> {
+  if (!signal) {
+    return promise;
   }
-
-  let inFlightTiles = customInFlightTiles.get(fetchImpl);
-  if (!inFlightTiles) {
-    inFlightTiles = new Map();
-    customInFlightTiles.set(fetchImpl, inFlightTiles);
-  }
-  return inFlightTiles;
+  if (signal.aborted) {
+    return Promise.reject(signal.reason ?? new DOMException("The operation was aborted", "AbortError"));
 }
-
-function subscribeToInFlightTile(inFlight: InFlightTile, signal: AbortSignal | undefined): Promise<Uint8Array | undefined> {
-  inFlight.subscribers += 1;
   return new Promise((resolve, reject) => {
-    let finished = false;
-    const release = () => {
-      if (finished) {
-        return;
-      }
-      finished = true;
+    const finish = () => {
       signal?.removeEventListener("abort", abort);
-      inFlight.subscribers -= 1;
-      if (!inFlight.settled && inFlight.subscribers === 0) {
-        inFlight.controller.abort();
-      }
     };
     const abort = () => {
-      release();
+      finish();
       reject(signal?.reason ?? new DOMException("The operation was aborted", "AbortError"));
     };
 
     signal?.addEventListener("abort", abort, { once: true });
-    if (signal?.aborted) {
-      abort();
-      return;
-    }
-    inFlight.promise.then(
+    promise.then(
       (tile) => {
-        release();
+        finish();
         resolve(tile);
       },
       (error) => {
-        release();
+        finish();
         reject(error);
       }
     );
@@ -219,25 +190,10 @@ function expandTileUrlTemplate(template: string, z: number, x: number, y: number
 }
 
 function getPMTilesReader(url: string, fetchImpl: typeof fetch | undefined): PMTiles {
-  if (!fetchImpl) {
-    let reader = defaultPMTilesReaders.get(url);
-    if (!reader) {
-      reader = new PMTiles(url, new ResolvedValueCache());
-      defaultPMTilesReaders.set(url, reader);
-    }
-    return reader;
-  }
-
-  let readers = customPMTilesReaders.get(fetchImpl);
-  if (!readers) {
-    readers = new Map();
-    customPMTilesReaders.set(fetchImpl, readers);
-  }
-
-  let reader = readers.get(url);
+  let reader = pmtilesReaders.get(url);
   if (!reader) {
-    reader = new PMTiles(makeFetchSource(url, fetchImpl), new ResolvedValueCache());
-    readers.set(url, reader);
+    reader = new PMTiles(makeFetchSource(url, fetchImpl ?? globalThis.fetch), new ResolvedValueCache());
+    pmtilesReaders.set(url, reader);
   }
   return reader;
 }
